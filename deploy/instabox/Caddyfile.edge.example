@@ -19,7 +19,7 @@ http://:8080 {
 		max_size 64KB
 	}
 	@public_api {
-		path /health /.well-known/jwks.json /v1/site/challenge /v1/site/token /v1/authorize
+		path /health /.well-known/jwks.json /v1/site/challenge /v1/site/token /v1/authorize /v1/connectors/space-briefing /v1/connectors/charging-briefing /v1/connectors/science-digest
 	}
 	handle @public_api {
 		reverse_proxy 127.0.0.1:9480 {
@@ -27,7 +27,7 @@ http://:8080 {
 			header_up X-Forwarded-Proto https
 			transport http {
 				dial_timeout 3s
-				response_header_timeout 15s
+				response_header_timeout 30s
 			}
 		}
 	}

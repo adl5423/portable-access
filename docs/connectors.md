@@ -62,6 +62,11 @@ operation and each grant appears once. Bind each site's `resource_path`,
 `resource_action`, tenant and origin to its standalone example configuration,
 then enable only the intended operation. Configuration contains no provider key.
 
+The public gateway must forward the three exact connector paths. The supplied
+Instabox gateway template includes them and uses a 30-second response-header
+timeout for the broker's 25-second generation budget. Retain the private-route
+404 fallback; do not expose the administrative socket or OpenBao listener.
+
 | Operation | Fixed data source | Upstream credentials |
 | --- | --- | --- |
 | `space-briefing` | NASA NeoWs close approaches for the current UTC day, first ten records | OpenAI, NASA |
