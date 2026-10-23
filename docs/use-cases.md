@@ -5,7 +5,7 @@ The examples demonstrate a specific deployment pattern: a trusted production Net
 | Project | Fixed data source | Fixed OpenAI operation | Protected resource |
 | --- | --- | --- | --- |
 | `space-briefing` | NASA NeoWs, current UTC day | Summarize near-Earth-object observations | `GET /api/briefing` |
-| `charging-briefing` | NLR alternative-fuel stations, fixed Charleston WV EV query | Summarize charging infrastructure | `GET /api/briefing` |
+| `charging-briefing` | NLR alternative-fuel stations, fixed EV query within 25 miles of Charleston WV | Summarize charging infrastructure | `GET /api/briefing` |
 | `science-digest` | Both fixed sources | Produce one combined public-data digest | `GET /api/briefing` |
 
 Each project has its own Netlify site, grant and tenant. All three use the configured authority audience. The operator may reuse one OpenAI provider credential across these grants. Reusing a provider credential couples its upstream quota and billing, while PAP authorization and hourly job admission remain separate by grant and operation. Use separate upstream projects or keys when provider billing and revocation must be independent.

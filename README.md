@@ -32,8 +32,9 @@ python3 -m venv .venv
 python -m pip install --require-hashes -r requirements.lock
 python -m pip install --no-deps .
 pap demo
-pap conformance
 ```
+
+For the complete conformance suite, install the locked development dependencies and follow [development](docs/development.md).
 
 ## Deploy independently
 
