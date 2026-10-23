@@ -15,7 +15,7 @@
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@netlify/blobs": "^10.0.0",
+    "@netlify/blobs": "^11.1.5",
     "@netlify/functions": "^5.2.0"
   },
   "devDependencies": {
