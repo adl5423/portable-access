@@ -518,7 +518,9 @@ def test_parallel_requests_cannot_exceed_authorization_quota(authority):
 
 @pytest.fixture
 async def running():
-    with tempfile.TemporaryDirectory(prefix="pap-security-", dir="/private/tmp") as name:
+    with tempfile.TemporaryDirectory(
+        prefix="pap-security-", dir="/private/tmp" if Path("/private/tmp").is_dir() else "/tmp"
+    ) as name:
         state = Path(name)
         runtime = await Runtime(state).start()
         agent = Agent(state)
