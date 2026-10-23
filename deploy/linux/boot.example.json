@@ -1,0 +1,8 @@
+{
+  "seal_origin": "https://custody.example.com",
+  "proof_origin": "https://8080-abcdefghijklmnop.instabox.tech",
+  "machine_id": "m_abcdefghijklmnopqrstuvwxyz",
+  "deployment_id": "example-deployment",
+  "key_id": "REPLACE_WITH_SHA256_OF_THE_INDEPENDENT_RANDOM_32_BYTE_SEAL_KEY",
+  "proxy_gid": 986
+}

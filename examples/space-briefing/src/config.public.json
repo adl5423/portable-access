@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "issuerURL": "https://authority.example.com",
+  "siteID": "00000000-0000-4000-8000-000000000000",
+  "grantID": "configure-space-briefing-grant",
+  "resourceOrigin": "https://your-space-briefing.netlify.app",
+  "resourcePath": "/api/briefing",
+  "resourceAction": "space-briefing.read",
+  "tenant": "your-space-briefing-tenant",
+  "environment": "production",
+  "audience": "urn:pap:example:space-briefing",
+  "productionSiteIsolated": false
+}

@@ -1,0 +1,26 @@
+{
+	admin unix//var/lib/pap-proxy/admin.sock|0600
+	log default {
+		format json
+		level WARN
+	}
+}
+
+pap.example.com {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy 127.0.0.1:9480 {
+		header_up -Forwarded
+		header_up X-Forwarded-Proto https
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 30s
+		}
+	}
+}

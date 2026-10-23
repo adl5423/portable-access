@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "issuerURL": "https://authority.example.com",
+  "siteID": "00000000-0000-4000-8000-000000000000",
+  "grantID": "configure-charging-briefing-grant",
+  "resourceOrigin": "https://your-charging-briefing.netlify.app",
+  "resourcePath": "/api/briefing",
+  "resourceAction": "charging-briefing.read",
+  "tenant": "your-charging-briefing-tenant",
+  "environment": "production",
+  "audience": "urn:pap:example:charging-briefing",
+  "productionSiteIsolated": false
+}

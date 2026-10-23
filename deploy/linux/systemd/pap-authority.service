@@ -1,0 +1,55 @@
+[Unit]
+Description=Portable Access authority
+Documentation=file:/opt/pap/source/deploy/linux/README.md
+Requires=pap-admin.socket pap-openbao.service
+After=network-online.target pap-admin.socket pap-openbao.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=pap-issuer
+Group=pap-issuer
+ExecStart=/opt/pap/venv/bin/pap production --config /etc/pap/authority.json
+Sockets=pap-admin.socket
+WorkingDirectory=/var/lib/pap-issuer
+StateDirectory=pap-issuer
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectProc=invisible
+ProcSubset=pid
+ReadWritePaths=/var/lib/pap-issuer
+InaccessiblePaths=/var/lib/pap-kms /var/lib/pap-proxy
+LimitNOFILE=8192
+TasksMax=128
+MemoryMax=1G
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pap-authority
+
+[Install]
+WantedBy=multi-user.target

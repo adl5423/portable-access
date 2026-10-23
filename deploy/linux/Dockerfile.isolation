@@ -1,0 +1,5 @@
+# Disposable test runner only. The production services use systemd on their Linux host.
+FROM python:3.12-slim-bookworm
+RUN python -m pip install --disable-pip-version-check --no-cache-dir cryptography==50.0.2
+COPY isolation_probe.py /probe/isolation_probe.py
+ENTRYPOINT ["python", "/probe/isolation_probe.py"]

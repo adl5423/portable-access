@@ -1,0 +1,56 @@
+{
+  "name": "@portable-access/netlify",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "configure": "node tools/configure.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node tools/build.mjs",
+    "test": "tsc && node --test dist/tests/*.test.mjs",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.0.0",
+    "@netlify/functions": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/client.d.mts",
+      "node": "./dist/src/client.mjs"
+    },
+    "./verifier": {
+      "types": "./dist/src/verifier.d.mts",
+      "node": "./dist/src/verifier.mjs"
+    },
+    "./background": {
+      "types": "./dist/src/background.d.mts",
+      "node": "./dist/src/background.mjs"
+    },
+    "./proof": {
+      "types": "./dist/src/proof-handler.d.mts",
+      "node": "./dist/src/proof-handler.mjs"
+    },
+    "./protocol": {
+      "types": "./dist/src/protocol.d.mts",
+      "node": "./dist/src/protocol.mjs"
+    }
+  },
+  "files": [
+    "dist/src/*.mjs",
+    "dist/src/*.d.mts",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md"
+  ]
+}

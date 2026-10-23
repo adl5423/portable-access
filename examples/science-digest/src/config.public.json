@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "issuerURL": "https://authority.example.com",
+  "siteID": "00000000-0000-4000-8000-000000000000",
+  "grantID": "configure-science-digest-grant",
+  "resourceOrigin": "https://your-science-digest.netlify.app",
+  "resourcePath": "/api/briefing",
+  "resourceAction": "science-digest.read",
+  "tenant": "your-science-digest-tenant",
+  "environment": "production",
+  "audience": "urn:pap:example:science-digest",
+  "productionSiteIsolated": false
+}

@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "enabled": false,
+  "custody_site_isolated": false,
+  "site_id": "00000000-0000-4000-8000-000000000003",
+  "custody_origin": "https://custody.example.com",
+  "deployment_id": "example-deployment",
+  "machine_id": "m_abcdefghijklmnopqrstuvwxyz",
+  "origin": "https://authority.example.com",
+  "key_id": "0000000000000000000000000000000000000000000000000000000000000000"
+}

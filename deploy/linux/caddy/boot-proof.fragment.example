@@ -1,0 +1,17 @@
+# Place inside the existing HTTPS-origin server block, before its fallback.
+# Only public boot requests exist below this root. Private seal material is elsewhere.
+@pap_boot_proof {
+    method GET
+    path_regexp pap_boot ^/\.well-known/pap/boot-proof/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$
+}
+handle @pap_boot_proof {
+    header {
+        Content-Type application/json
+        Cache-Control "no-store"
+        Pragma "no-cache"
+        X-Content-Type-Options nosniff
+    }
+    root * /run/pap-boot/public
+    rewrite * /{re.pap_boot.1}.json
+    file_server
+}

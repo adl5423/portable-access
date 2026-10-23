@@ -1,0 +1,33 @@
+{
+  "name": "@portable-access/netlify-seal",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node tools/build.mjs",
+    "test": "tsc && node --test dist/tests/*.test.mjs",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@netlify/blobs": "10.7.13",
+    "@netlify/functions": "5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  },
+  "files": [
+    "dist/src/*.mjs",
+    "dist/src/*.d.mts",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md"
+  ]
+}

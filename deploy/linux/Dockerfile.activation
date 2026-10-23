@@ -1,0 +1,8 @@
+# Disposable source-code activation test only. This does not run the authority service.
+FROM python:3.12-slim-bookworm
+COPY requirements.lock /tmp/requirements.lock
+RUN python -m pip install --disable-pip-version-check --no-cache-dir --require-hashes -r /tmp/requirements.lock
+COPY pap /source/pap
+COPY deploy/linux/isolation_probe.py deploy/linux/runtime_activation_probe.py /probe/
+WORKDIR /source
+ENTRYPOINT ["python", "/probe/runtime_activation_probe.py"]

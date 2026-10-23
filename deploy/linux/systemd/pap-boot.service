@@ -1,0 +1,58 @@
+[Unit]
+Description=Retrieve PAP OpenBao seal credential from independent custody
+Documentation=file:/opt/pap/source/docs/cold-boot-profile.md
+Requires=pap-caddy.service
+Wants=network-online.target
+After=network-online.target time-sync.target pap-caddy.service
+Before=pap-openbao.service
+RequiresMountsFor=/etc/pap /opt/pap /var/lib/pap-proxy
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/pap/venv/bin/python -m pap.boot --config /etc/pap/boot.json
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=78
+RuntimeDirectory=pap-boot
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectProc=invisible
+ReadWritePaths=/run/pap-boot
+InaccessiblePaths=/var/lib/pap-kms /var/lib/pap-issuer /var/lib/pap-enroller /run/pap-admin /etc/pap/enrollment
+LimitCORE=0
+MemorySwapMax=0
+MemoryMax=256M
+TasksMax=16
+LimitNOFILE=128
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pap-boot
+
+[Install]
+WantedBy=multi-user.target

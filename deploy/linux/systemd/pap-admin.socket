@@ -1,0 +1,17 @@
+[Unit]
+Description=Portable Access administrative socket
+After=systemd-tmpfiles-setup.service
+
+[Socket]
+ListenStream=/run/pap-admin/admin.sock
+Accept=no
+Service=pap-authority.service
+FileDescriptorName=pap-admin
+SocketUser=pap-admin
+SocketGroup=pap-admin
+SocketMode=0600
+DirectoryMode=0700
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

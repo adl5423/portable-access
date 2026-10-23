@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.netlify/
+public/status.json

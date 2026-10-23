@@ -1,0 +1,37 @@
+{
+	admin unix//var/lib/pap-proxy/admin.sock|0600
+	auto_https off
+	log default {
+		format json
+		level WARN
+	}
+}
+
+# Only use this listener after the Instabox HTTPS proxy is independently verified.
+# Public TLS terminates at Instabox. The proxy-to-VM hop is provider controlled.
+http://:8080 {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	@public_api {
+		path /health /.well-known/jwks.json /v1/site/challenge /v1/site/token /v1/authorize
+	}
+	handle @public_api {
+		reverse_proxy 127.0.0.1:9480 {
+			header_up -Forwarded
+			header_up X-Forwarded-Proto https
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 15s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+}

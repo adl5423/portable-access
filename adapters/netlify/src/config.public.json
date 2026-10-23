@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "issuerURL": "https://authority.example.com",
+  "siteID": "00000000-0000-4000-8000-000000000001",
+  "grantID": "00000000-0000-4000-8000-000000000002",
+  "resourceOrigin": "https://application.example.com",
+  "resourcePath": "/api/pap/records",
+  "resourceAction": "records.read",
+  "tenant": "example",
+  "environment": "production",
+  "audience": "urn:pap:example",
+  "productionSiteIsolated": false
+}

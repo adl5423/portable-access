@@ -1,0 +1,24 @@
+{
+  "issuer": "https://pap.example.com",
+  "audience": "urn:pap:records-api",
+  "state_dir": "/var/lib/pap-issuer",
+  "listen_host": "127.0.0.1",
+  "listen_port": 9480,
+  "admin_uid": 0,
+  "signing_interval": 86400,
+  "token_ttl": 60,
+  "kms": {
+    "provider": "openbao",
+    "base_url": "https://127.0.0.1:8200",
+    "role": "pap-issuer",
+    "client_cert": "/var/lib/pap-issuer/credentials/current/client-cert.pem",
+    "client_key": "/var/lib/pap-issuer/credentials/current/client-key.pem",
+    "ca_file": "/etc/pap/enrollment-ca.pem",
+    "client_ca_file": "/etc/pap/enrollment-ca.pem",
+    "pki_role": "pap-issuer",
+    "common_name": "pap-issuer",
+    "enrollment_socket": "/run/pap-enroller/enroll.sock",
+    "enrollment_uid": 0
+  },
+  "sites": []
+}

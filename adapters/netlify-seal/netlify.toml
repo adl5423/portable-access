@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "public"
+[build.environment]
+  NODE_VERSION = "24"
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+[context.deploy-preview]
+  command = "node tools/reject-preview.mjs"
+[context.branch-deploy]
+  command = "node tools/reject-preview.mjs"
