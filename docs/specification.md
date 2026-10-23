@@ -1,6 +1,6 @@
 # Portable Access Profile: local profile v0.1
 
-This local profile remains implemented in release 0.2. The additional network profile is specified in [PAP-Netlify-Origin-0.2](production-profile.md). Statements below about absent network adapters describe the original local profile, not the complete 0.2 release.
+This local profile remains implemented in release 0.4. The additional network profile is specified in [PAP-Netlify-Origin-0.2](production-profile.md). Release 0.4 adds the provider-neutral `https-origin` verifier and portable Python client; their registration, assurance and deployment contract is in [identity adapters](identity-adapters.md). Statements below about absent network adapters describe the original local profile, not the complete release.
 
 Status: experimental, proposed open specification
 Version: 0.1

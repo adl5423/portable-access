@@ -2,7 +2,7 @@
 
 ## Supported versions and reporting
 
-The maintainer triages security reports for the latest 0.3.x release. Earlier reference versions receive no backported fixes. Report a suspected vulnerability privately through [GitHub private vulnerability reporting](https://github.com/adl5423/portable-access/security/advisories/new). Maintainer: Aisen Lopez Ramos, GitHub @adl5423. Do not include real credentials, private recovery packets, customer data or unredacted proofs in an issue. A response-time or paid support commitment is not implied.
+The maintainer triages security reports for the latest 0.4.x release. Earlier reference versions receive no backported fixes. Report a suspected vulnerability privately through [GitHub private vulnerability reporting](https://github.com/adl5423/portable-access/security/advisories/new). Maintainer: Aisen Lopez Ramos, GitHub @adl5423. Do not include real credentials, private recovery packets, customer data or unredacted proofs in an issue. A response-time or paid support commitment is not implied.
 
 ## Scope
 
@@ -13,6 +13,12 @@ The production command requires a nonroot Linux process with no capabilities and
 Netlify admission binds an entire trusted production site. Code deployed by an application-site administrator can use that site's configured grant. It does not attest a particular commit or function. Seal custody uses a different trusted project. Custody deployment access, private Blobs access and the provider are part of the root trust boundary. Host root and the KMS administrator can compromise custody. This reference claims neither hardware attestation nor HSM isolation.
 
 The optional provider broker decrypts upstream API keys inside the isolated authority process for a fixed allowed call. Applications never receive those keys. Compromise of the authority can expose decrypted provider credentials. The fixed broker rejects caller-controlled URLs, models, prompts and tools. Durable paid-job claims prevent automatic duplicate generation within the same grant/operation/UTC-hour, including uncertain outcomes. Read docs/connectors.md for cache, revocation and billing semantics.
+
+## Generic HTTPS origin adapter
+
+The `https-origin` identity adapter proves control of the exact public HTTPS origin registered by an operator. DNS, TLS termination, routing, administrators and every application deployment able to publish the proof path belong to this trust boundary. It does not attest a hosting provider, container image or hardware. The identity adapter is an immutable grant binding; changing it requires a fresh registration. Existing registrations without this field retain the Netlify verifier.
+
+The generic client keeps ephemeral proof keys and expiring public records in one process. Its callback accepts read requests only. It exposes no HTTP challenge-publication API. Horizontal replicas need shared proof publication with tested consistency; the supplied memory store provides no cross-process guarantee. Arbitrary public origins still require explicit root-owned registration and the verifier rejects private DNS destinations, redirects and alternative URL spellings.
 
 ## Lifecycle and operations
 

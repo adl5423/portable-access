@@ -91,6 +91,7 @@ class SiteConfig(StrictModel):
     trusted_site_contexts: Literal[True]
     resource_path: str = "/api/pap/records"
     resource_action: str = "records.read"
+    identity_adapter: Literal["netlify", "https-origin"] = "netlify"
 
     @model_validator(mode="after")
     def validate_site(self):
@@ -540,7 +541,12 @@ class ProductionRuntime:
         if self.outbound.locked():
             raise Denied("authority_busy", 503)
         async with self.outbound:
-            published = await fetch_site_record(site.origin, payload.challenge_id)
+            if site.identity_adapter == "netlify":
+                published = await fetch_site_record(site.origin, payload.challenge_id)
+            else:
+                published = await fetch_site_record(
+                    site.origin, payload.challenge_id, identity_adapter=site.identity_adapter
+                )
         self.require_ready()
         return web.json_response(
             await self.call(

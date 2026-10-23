@@ -101,6 +101,32 @@ def main() -> None:
             for notice in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copyfile(ROOT / notice, directory / notice)
             archive(directory, output / f"portable-access-{operation}-{version}.tar.gz", epoch)
+    # Retain the repository-relative Docker build context in the standalone archive.
+    with tempfile.TemporaryDirectory(prefix="pap-docker-release-") as temporary:
+        directory = Path(temporary) / f"portable-access-docker-https-{version}"
+        required = {"pyproject.toml", "requirements.lock", "requirements-dev.lock", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", ".dockerignore"}
+        for name in tracked:
+            if not name or not (name in required or name.startswith("pap/") or name.startswith("examples/docker-https/") or name in {"docs/docker-https.md", "docs/identity-adapters.md"}):
+                continue
+            relative = Path(name)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise RuntimeError("unsafe Docker source path")
+            target = directory / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, target)
+        example_readme = directory / "examples/docker-https/README.md"
+        example_readme.write_text(example_readme.read_text().replace(
+            "../../docs/operator-cli.md",
+            f"https://github.com/adl5423/portable-access/blob/v{version}/docs/operator-cli.md",
+        ))
+        (directory / "README.md").write_text(
+            "# Docker HTTPS workload adapter\n\n"
+            "Build and run from this archive root using `docker compose -f examples/docker-https/compose.yaml`. "
+            "Read `docs/docker-https.md` and configure the disabled public policy before exposing the service. "
+            "The authority is a separate deployment. Complete operator and authority instructions are at "
+            f"https://github.com/adl5423/portable-access/tree/v{version}.\n"
+        )
+        archive(directory, output / f"portable-access-docker-https-{version}.tar.gz", epoch)
     checksums = "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in sorted(output.iterdir()) if path.is_file())
     (output / "SHA256SUMS").write_text(checksums)
     print(f"Built version {version}; checksums: {output / 'SHA256SUMS'}")

@@ -19,6 +19,7 @@ from pap import cloud
 from pap.authority import Authority, Config
 from pap.cloud import PublicResolver, Site, SiteRegistry, fetch_site_record, netlify_origin
 from pap.crypto import Denied, fresh_key, proof, public_jwk, thumbprint
+from pap.identity_adapters import IDENTITY_ADAPTERS, https_origin, identity_adapter, public_destination
 from pap.storage import Store
 
 
@@ -594,6 +595,16 @@ def test_resource_proof_replay_and_stolen_token_fail_while_fresh_proofs_succeed(
         "2001:db8::1",
         "224.0.0.1",
         "ff0e::1",
+        "168.63.129.16",
+        "192.0.0.192",
+        "192.88.99.1",
+        "::ffff:127.0.0.1",
+        "::ffff:1.1.1.1",
+        "64:ff9b::a9fe:a9fe",
+        "64:ff9b:1::a9fe:a9fe",
+        "2002:7f00:1::",
+        "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+        "2606:4700:4700::1111%lo0",
     ],
 )
 def test_dns_resolution_rejects_nonpublic_ips_at_connection_time(monkeypatch, address):
@@ -681,7 +692,8 @@ def test_origin_verification_uses_fixed_https_path_no_redirects_no_proxy_and_bou
     assert observed["url"] == "https://trusted-project.netlify.app/.well-known/pap/site-proof/" + challenge_id
     assert observed["session"]["trust_env"] is False
     assert observed["request"]["allow_redirects"] is False
-    assert observed["request"]["headers"] == {"Accept": "application/json"}
+    assert observed["request"]["headers"] == {"Accept": "application/json", "Accept-Encoding": "identity"}
+    assert observed["session"]["auto_decompress"] is False
     assert observed["connector"]["use_dns_cache"] is False
     assert observed["read_limits"][0] == 16385
 
@@ -710,4 +722,194 @@ def test_origin_verification_rejects_ambiguous_oversized_or_redirected_provider_
 def test_origin_verification_reads_to_eof_before_accepting_a_chunked_response(monkeypatch, chunks):
     mock_provider(monkeypatch, chunks)
     with pytest.raises(Denied):
+        asyncio.run(fetch_site_record("https://trusted-project.netlify.app", str(uuid.uuid4())))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://app.example.org",
+        "https://app.example.org/",
+        "https://APP.example.org",
+        "HTTPS://app.example.org",
+        "https://app.example.org:443",
+        "https://app.example.org:8443",
+        "https://user:password@app.example.org",
+        "https://app.example.org/path",
+        "https://app.example.org?target=localhost",
+        "https://app.example.org#fragment",
+        "https://app.example.org.",
+        "https://app.example.org\n",
+        "https://app.exa\tmple.org",
+        "https://app.example.org\\@evil.example.org",
+        "https://app%2eexample.org",
+        "https://localhost",
+        "https://foo.localhost",
+        "https://foo.local",
+        "https://metadata.google.internal",
+        "https://foo.home.arpa",
+        "https://127.0.0.1",
+        "https://2130706433",
+        "https://127.1",
+        "https://0x7f000001",
+        "https://[::1]",
+        "https://éxample.org",
+        "https://a..example.org",
+        "https://-app.example.org",
+        "https://app-.example.org",
+        "https://" + "a" * 64 + ".example.org",
+        None,
+        1,
+        {},
+    ],
+)
+def test_portable_origin_rejects_ambiguous_or_local_destinations(value):
+    with pytest.raises(ValueError, match="canonical public DNS"):
+        https_origin(value)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["https://app.example.org", "https://service.project.up.railway.app", "https://app.onrender.com"],
+)
+def test_portable_origin_accepts_canonical_deployment_domains(origin):
+    assert https_origin(origin) == origin
+    with pytest.raises(ValueError, match="netlify"):
+        netlify_origin(origin)
+
+
+@pytest.mark.parametrize("identifier", ["unknown", "https-origin ", "NETLIFY", "pap.custom:adapter", None, []])
+def test_identity_registry_is_closed_and_rejects_unknown_or_dynamic_adapters(identifier):
+    with pytest.raises(ValueError, match="unknown identity adapter"):
+        identity_adapter(identifier)
+
+
+def test_identity_registry_cannot_be_modified_and_reports_actual_trust_method():
+    assert set(IDENTITY_ADAPTERS) == {"netlify", "https-origin"}
+    assert identity_adapter().identifier == "netlify"
+    assert identity_adapter("https-origin").attestation == "origin-control"
+    with pytest.raises(TypeError):
+        IDENTITY_ADAPTERS["remote-oidc"] = object()
+
+
+def test_legacy_netlify_binding_migrates_without_reprovisioning_or_extending_policy(registered):
+    authority, _, site = registered
+    previous = authority.store.setting("site:" + site.grant_id)
+    previous.pop("identity_adapter")
+    authority.store.set_setting("site:" + site.grant_id, previous)
+    initial_expiry = authority.store.db.execute(
+        "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
+    ).fetchone()[0]
+    SiteRegistry(authority, [replace(site, grant_expires_at=site.grant_expires_at + 3600)])
+    assert authority.store.setting("site:" + site.grant_id)["identity_adapter"] == "netlify"
+    assert authority.store.db.execute(
+        "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
+    ).fetchone()[0] == initial_expiry
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_existing_grant_cannot_switch_identity_adapters_even_for_the_same_origin(registered, legacy):
+    authority, _, site = registered
+    if legacy:
+        previous = authority.store.setting("site:" + site.grant_id)
+        previous.pop("identity_adapter")
+        authority.store.set_setting("site:" + site.grant_id, previous)
+    with pytest.raises(ValueError, match="silently rebound"):
+        SiteRegistry(authority, [replace(site, identity_adapter="https-origin")])
+    assert authority.store.setting("site:" + site.grant_id).get("identity_adapter", "netlify") == "netlify"
+
+
+def test_identity_adapter_is_bound_into_challenge_mac(registered):
+    _, registry, site = registered
+    values = (str(uuid.uuid4()), thumbprint(public_jwk(fresh_key())), int(time.time()) + 15)
+    assert registry._challenge_mac(site, *values) != registry._challenge_mac(
+        replace(site, identity_adapter="https-origin"), *values
+    )
+
+
+def test_portable_adapter_enrollment_authorization_replay_and_revocation(registered):
+    authority, _, site = registered
+    portable = replace(
+        site,
+        site_id=str(uuid.uuid4()),
+        origin="https://production-workload.example.org",
+        subject="portable-workload",
+        grant_id="portable-grant",
+        identity_adapter="https-origin",
+    )
+    registry = SiteRegistry(authority, [portable])
+    key, credential = issue(registry, portable)
+    assert access(registry, portable, key, credential)["subject"] == portable.subject
+    with pytest.raises(Denied, match="resource_not_authorized"):
+        access(registry, portable, key, credential, url="https://other.example.org" + portable.resource_path)
+    authority.event(str(uuid.uuid4()), "revoke_workload", portable.subject, "compromised")
+    with pytest.raises(Denied, match="workload_not_authorized"):
+        access(registry, portable, key, credential)
+    with pytest.raises(Denied, match="workload_not_authorized"):
+        enrollment(registry, portable)
+
+
+def test_portable_fetch_uses_explicit_adapter_and_registered_fixed_path(monkeypatch):
+    record = {"public": "record"}
+    observed = mock_provider(monkeypatch, json.dumps(record).encode())
+    challenge_id = str(uuid.uuid4())
+    origin = "https://production-workload.example.org"
+    assert asyncio.run(fetch_site_record(origin, challenge_id, identity_adapter="https-origin")) == record
+    assert observed["url"] == origin + "/.well-known/pap/site-proof/" + challenge_id
+    with pytest.raises(ValueError, match="netlify"):
+        asyncio.run(fetch_site_record(origin, challenge_id))
+
+
+def test_public_resolver_rejects_mixed_global_and_private_answers(monkeypatch):
+    async def run():
+        async def resolution(*_args, **_kwargs):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("1.1.1.1", 443)),
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("169.254.169.254", 443)),
+            ]
+
+        monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolution)
+        with pytest.raises(OSError, match="nonpublic"):
+            await PublicResolver("production-workload.example.org").resolve("production-workload.example.org", 443)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("address", ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"])
+def test_public_destination_allows_direct_public_service_addresses(address):
+    assert str(public_destination(address)) == address
+
+
+def test_origin_verification_rejects_compressed_responses_before_reading_or_decompressing(monkeypatch):
+    class Compressed:
+        status = 200
+        content_type = "application/json"
+        headers = {"Content-Encoding": "gzip"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        @property
+        def content(self):
+            raise AssertionError("compressed body must not be consumed")
+
+    class Session:
+        def __init__(self, **kwargs):
+            assert kwargs["auto_decompress"] is False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def get(self, *_args, **_kwargs):
+            return Compressed()
+
+    monkeypatch.setattr(cloud.aiohttp, "ClientSession", Session)
+    monkeypatch.setattr(cloud.aiohttp, "TCPConnector", lambda **_kwargs: object())
+    with pytest.raises(Denied, match="site_proof_invalid"):
         asyncio.run(fetch_site_record("https://trusted-project.netlify.app", str(uuid.uuid4())))

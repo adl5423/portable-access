@@ -1,0 +1,7 @@
+# Official multi-platform index verified on 2026-10-23.
+FROM caddy:2.11.7-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+# Docker initializes a fresh named volume from this directory, preserving its owner.
+RUN setcap -r /usr/bin/caddy \
+    && mkdir -p /data/caddy /config/caddy \
+    && chown -R 10001:10001 /data /config && chmod 0700 /data /config
+USER 10001:10001

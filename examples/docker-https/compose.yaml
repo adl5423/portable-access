@@ -1,0 +1,65 @@
+name: pap-https-workload
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: examples/docker-https/Dockerfile
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1
+    tmpfs:
+      - /run/pap-workload:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=10001,gid=10001
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,mode=0700,uid=10001,gid=10001
+    volumes:
+      - ./config.public.json:/etc/pap-workload/config.public.json:ro
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=2).read()"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks: [pap]
+
+  gateway:
+    profiles: [https]
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    user: "10001:10001"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    environment:
+      # Public routing metadata, never an API key or a workload credential.
+      PAP_HOSTNAME: ${PAP_HOSTNAME:-workload.example.com}
+      XDG_DATA_HOME: /data
+      XDG_CONFIG_HOME: /config
+    ports:
+      - "80:8080"
+      - "443:8443"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m,mode=0700,uid=10001,gid=10001
+      - /config:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=10001,gid=10001
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [pap]
+
+volumes:
+  caddy-data:
+
+networks:
+  pap:

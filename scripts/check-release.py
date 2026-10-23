@@ -22,12 +22,14 @@ for name in filter(None, tracked):
     content = (root / path).read_bytes()
     if (b"-----BEGIN " + b"PRIVATE KEY-----") in content or (b"-----BEGIN RSA " + b"PRIVATE KEY-----") in content or re.search(rb"sk-(?:proj-)?[A-Za-z0-9_-]{40,}", content):
         failures.append(f"credential-shaped material tracked: {name}")
-for path in root.glob("**/src/config.public.json"):
+for path in [*root.glob("**/src/config.public.json"), root / "examples/docker-https/config.public.json"]:
     if "node_modules" in path.parts or "dist" in path.parts:
         continue
     config = json.loads(path.read_text())
     if config.get("enabled") is not False:
         failures.append(f"enabled public default: {path.relative_to(root)}")
+    if "trustOriginDeployment" in config and config["trustOriginDeployment"] is not False:
+        failures.append(f"unprovisioned origin claims trust: {path.relative_to(root)}")
     if "productionSiteIsolated" in config and config["productionSiteIsolated"] is not False:
         failures.append(f"unprovisioned site claims isolation: {path.relative_to(root)}")
 version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]

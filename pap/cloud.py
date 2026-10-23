@@ -1,10 +1,9 @@
-"""Registered Netlify origin verification. This is site control, not platform attestation."""
+"""Registered-origin verification. This is site control, not platform attestation."""
 
 import asyncio
 import base64
 import hashlib
 import hmac
-import ipaddress
 import json
 import re
 import secrets
@@ -18,31 +17,9 @@ import aiohttp
 from aiohttp.abc import AbstractResolver
 
 from .crypto import Denied, b64, thumbprint, verify_proof
-
-
-def netlify_origin(value: str) -> str:
-    try:
-        p = urlsplit(value)
-        hostname = p.hostname or ""
-        valid = (
-            isinstance(value, str)
-            and len(value) <= 256
-            and value == "https://" + hostname
-            and p.scheme == "https"
-            and p.netloc == hostname
-            and not p.path
-            and not p.query
-            and not p.fragment
-            and not p.username
-            and not p.password
-            and "--" not in hostname
-            and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.netlify\.app", hostname)
-        )
-    except (ValueError, TypeError):
-        valid = False
-    if not valid:
-        raise ValueError("a canonical production https://SITE.netlify.app origin is required")
-    return value
+from .identity_adapters import identity_adapter as get_identity_adapter
+from .identity_adapters import netlify_origin as netlify_origin
+from .identity_adapters import public_destination
 
 
 class PublicResolver(AbstractResolver):
@@ -59,9 +36,10 @@ class PublicResolver(AbstractResolver):
         )
         results = []
         for af, _socktype, protocol, _canonname, address in records:
-            ip = ipaddress.ip_address(address[0])
-            if not ip.is_global or ip.is_multicast or ip.is_unspecified:
-                raise OSError("nonpublic destination")
+            try:
+                ip = public_destination(address[0])
+            except ValueError:
+                raise OSError("nonpublic destination") from None
             results.append(
                 {"hostname": host, "host": str(ip), "port": port, "family": af, "proto": protocol, "flags": 0}
             )
@@ -73,10 +51,13 @@ class PublicResolver(AbstractResolver):
         pass
 
 
-async def fetch_site_record(origin: str, challenge_id: str) -> dict:
-    netlify_origin(origin)
-    if str(uuid.UUID(challenge_id)) != challenge_id:
-        raise Denied("invalid_challenge", 400)
+async def fetch_site_record(origin: str, challenge_id: str, *, identity_adapter: str = "netlify") -> dict:
+    get_identity_adapter(identity_adapter).validate_origin(origin)
+    try:
+        if str(uuid.UUID(challenge_id)) != challenge_id:
+            raise ValueError("noncanonical challenge")
+    except (ValueError, TypeError, AttributeError):
+        raise Denied("invalid_challenge", 400) from None
     connector = aiohttp.TCPConnector(
         resolver=PublicResolver(urlsplit(origin).hostname), use_dns_cache=False, limit=2
     )
@@ -84,15 +65,18 @@ async def fetch_site_record(origin: str, challenge_id: str) -> dict:
         async with aiohttp.ClientSession(
             connector=connector,
             trust_env=False,
+            auto_decompress=False,
             timeout=aiohttp.ClientTimeout(total=5, connect=3, sock_read=2),
         ) as session:
             async with session.get(
                 origin + "/.well-known/pap/site-proof/" + challenge_id,
-                headers={"Accept": "application/json"},
+                headers={"Accept": "application/json", "Accept-Encoding": "identity"},
                 allow_redirects=False,
             ) as response:
                 if response.status != 200 or response.content_type != "application/json":
                     raise Denied("site_proof_unavailable", 503)
+                if getattr(response, "headers", {}).get("Content-Encoding", "identity").lower() != "identity":
+                    raise Denied("site_proof_invalid", 403)
                 chunks, total = [], 0
                 while True:
                     chunk = await response.content.read(16385 - total)
@@ -118,7 +102,7 @@ async def fetch_site_record(origin: str, challenge_id: str) -> dict:
                 return result
     except Denied:
         raise
-    except (OSError, ValueError, aiohttp.ClientError, TimeoutError):
+    except (OSError, ValueError, RecursionError, aiohttp.ClientError, TimeoutError):
         raise Denied("site_proof_unavailable", 503) from None
 
 
@@ -134,11 +118,12 @@ class Site:
     trusted_site_contexts: bool
     resource_path: str = "/api/pap/records"
     resource_action: str = "records.read"
+    identity_adapter: str = "netlify"
 
     def __post_init__(self):
         if str(uuid.UUID(self.site_id)) != self.site_id:
             raise ValueError("canonical site UUID required")
-        netlify_origin(self.origin)
+        get_identity_adapter(self.identity_adapter).validate_origin(self.origin)
         for value in (self.subject, self.tenant, self.environment, self.grant_id):
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", value):
                 raise ValueError("invalid site binding identifier")
@@ -180,6 +165,10 @@ class SiteRegistry:
         for site in sites:
             binding = {k: v for k, v in vars(site).items() if k != "grant_expires_at"}
             previous = self.store.setting("site:" + site.grant_id)
+            if isinstance(previous, dict) and "identity_adapter" not in previous:
+                # Older releases only implemented Netlify. Absence is a legacy
+                # Netlify binding, never permission to select a new trust method.
+                previous = {**previous, "identity_adapter": "netlify"}
             if previous is not None and previous != binding:
                 raise ValueError("existing site binding cannot be silently rebound")
             existed = self.store.db.execute("SELECT 1 FROM workloads WHERE id=?", (site.subject,)).fetchone()
@@ -214,6 +203,7 @@ class SiteRegistry:
         binding = json.dumps(
             [
                 "PAP-site-challenge-v1",
+                site.identity_adapter,
                 self.authority.config.issuer,
                 site.site_id,
                 site.origin,
@@ -331,7 +321,12 @@ class SiteRegistry:
             db.execute("UPDATE site_challenges SET consumed=1 WHERE id=?", (challenge_id,))
             self.store.audit(
                 "site.verified",
-                {"subject": site.subject, "site_id": site.site_id, "attestation": "origin-control"},
+                {
+                    "subject": site.subject,
+                    "site_id": site.site_id,
+                    "identity_adapter": site.identity_adapter,
+                    "attestation": get_identity_adapter(site.identity_adapter).attestation,
+                },
             )
         return result
 

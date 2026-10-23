@@ -271,10 +271,15 @@ class TestCertificates:
 
 
 @pytest.fixture
-async def service(tmp_path, monkeypatch):
+async def service(tmp_path, monkeypatch, request):
     monkeypatch.setattr(production, "OpenBaoSigner", TestSigner)
     monkeypatch.setattr(production, "CertificateManager", TestCertificates)
-    config = ProductionConfig.model_validate(configuration(tmp_path))
+    value = configuration(tmp_path)
+    if getattr(request, "param", None) == "https-origin":
+        value["sites"][0].update(
+            identity_adapter="https-origin", origin="https://production-workload.example.org"
+        )
+    config = ProductionConfig.model_validate(value)
     runtime = ProductionRuntime(config)
     await runtime.call(runtime.actor.start)
     runtime.ready = True
@@ -355,6 +360,68 @@ async def test_http_enrollment_authorization_revocation_and_key_custody(service,
         )
         == 0
     )
+
+
+@pytest.mark.parametrize("service", ["https-origin"], indirect=True)
+async def test_portable_origin_http_flow_selects_registered_adapter_and_enforces_revocation(service, monkeypatch):
+    runtime, client = service
+    key = fresh_key()
+    jwk = public_jwk(key)
+    response = await client.post("/v1/site/challenge", json={"grant_id": "test-grant", "jwk": jwk})
+    assert response.status == 200
+    record = await response.json()
+    captured = []
+
+    async def fetch(origin, challenge_id, *, identity_adapter):
+        captured.append((origin, challenge_id, identity_adapter))
+        return copy.deepcopy(record)
+
+    monkeypatch.setattr(production, "fetch_site_record", fetch)
+    # The caller cannot change the configured trust method or the target origin.
+    response = await client.post(
+        "/v1/site/token",
+        json={"challenge_id": record["challenge_id"], "jwk": jwk, "identity_adapter": "netlify"},
+    )
+    assert response.status == 400
+    assert captured == []
+    response = await client.post(
+        "/v1/site/token",
+        json={"challenge_id": record["challenge_id"], "jwk": jwk},
+        headers={"DPoP": proof(key, "POST", runtime.config.issuer + "/v1/site/token", record["nonce"])},
+    )
+    assert response.status == 200, await response.text()
+    assert captured == [(runtime.config.sites[0].origin, record["challenge_id"], "https-origin")]
+    credential = await response.json()
+    access = authorization_request(runtime, key, credential)
+    response = await client.post("/v1/authorize", **access)
+    assert response.status == 200
+    response = await client.post("/v1/authorize", **access)
+    assert response.status == 401
+    await runtime.call(
+        runtime.actor.authority.event, str(uuid.uuid4()), "revoke_workload", "netlify-test", "compromised"
+    )
+    response = await client.post("/v1/authorize", **authorization_request(runtime, key, credential))
+    assert response.status == 403
+    response = await client.post("/v1/site/challenge", json={"grant_id": "test-grant", "jwk": jwk})
+    assert response.status == 403
+
+
+@pytest.mark.parametrize("adapter", ["unknown", "NETLIFY", "module:plugin", None])
+def test_config_rejects_unknown_identity_adapters(tmp_path, adapter):
+    value = configuration(tmp_path)
+    value["sites"][0]["identity_adapter"] = adapter
+    with pytest.raises(ValidationError):
+        ProductionConfig.model_validate(value)
+
+
+def test_config_defaults_to_netlify_and_requires_explicit_portable_enrollment(tmp_path):
+    value = configuration(tmp_path)
+    assert ProductionConfig.model_validate(value).sites[0].identity_adapter == "netlify"
+    value["sites"][0]["origin"] = "https://production-workload.example.org"
+    with pytest.raises(ValidationError):
+        ProductionConfig.model_validate(value)
+    value["sites"][0]["identity_adapter"] = "https-origin"
+    assert ProductionConfig.model_validate(value).sites[0].identity_adapter == "https-origin"
 
 
 async def test_site_proof_fetch_is_after_crypto_validation_and_bound_to_registered_origin(

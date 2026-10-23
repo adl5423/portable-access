@@ -9,6 +9,8 @@ python3 -m venv .venv
 .venv/bin/python -m ruff check .
 .venv/bin/python -m pytest -q
 .venv/bin/python -m pytest -q deploy/instabox/tests
+.venv/bin/python -m pytest -q examples/docker-https/tests
+python3 examples/docker-https/tests/container_acceptance.py
 (cd adapters/netlify && npm ci --ignore-scripts && npm run check)
 (cd adapters/netlify-seal && npm ci --ignore-scripts && npm run check)
 for project in space-briefing charging-briefing science-digest; do
@@ -19,7 +21,7 @@ done
 
 Use an absolute Python path for the interoperability command if your shell resolves relative executable paths differently. The command creates synthetic keys, verifies Node proofs in Python, and verifies Python signatures in Node. It does not use real API credentials.
 
-CI runs the Python suite on 3.12, 3.13 and 3.14, and the adapter and example suites on Node 22 and 24. It also checks public defaults, package versions, dependency audit results and Python/Node signature interoperability. Privileged Linux tests report explicit skips where the runner does not meet the test prerequisites. Review these skips before claiming host isolation acceptance.
+CI runs the Python and Docker HTTPS protocol suites on 3.12, 3.13 and 3.14, and the Node adapter and example suites on Node 22 and 24. A separate Docker job builds pinned images and verifies non-root execution, filesystem and capability restrictions, fresh certificate-volume ownership and a trusted local HTTPS gateway. Container acceptance requires a running Docker engine; its uniquely named test resources are removed afterwards. CI also checks public defaults, package versions, dependency audit results and Python/Node signature interoperability. Privileged Linux tests report explicit skips where the runner does not meet the test prerequisites. Review these skips before claiming host isolation acceptance.
 
 Actions use immutable commit pins. Dependabot proposes dependency and action updates; reviewers must verify upstream provenance and rerun validation. CI has read-only repository permissions. Only the release job gets write permission to create a GitHub release. Neither routine CI nor release builds receive application provider keys.
 
@@ -33,7 +35,7 @@ Commit the complete reviewed source first. Match the Python package, both adapte
 (cd dist/release && shasum -a 256 -c SHA256SUMS)
 ```
 
-The build writes a Python wheel and source distribution, the server-only Netlify SDK archive, three standalone example archives and SHA256SUMS. Each example archive contains its own SDK package under `vendor/`, its lockfile and a base-independent Netlify configuration. The builder installs and checks each packaged example before producing its archive. The output directory must be empty to prevent mixing old artifacts into a release.
+The build writes a Python wheel and source distribution, the server-only Netlify SDK archive, three standalone Netlify example archives, a standalone Docker HTTPS archive and SHA256SUMS. Each Netlify example archive contains its own SDK package under `vendor/`, its lockfile and a base-independent Netlify configuration. The builder installs and checks each packaged Netlify example before producing its archive. The Docker archive retains the source layout needed by its Compose build context and includes pinned dependency locks, application source and deployment docs. The output directory must be empty to prevent mixing old artifacts into a release.
 
 A `v<package-version>` tag triggers the full CI workflow before publishing those files through GitHub Releases. The tag must match the package version exactly. npm and PyPI publishing are not configured. If the project adopts registries, use their OIDC trusted-publisher workflows and keep registry authorization in a separate reviewed job.
 

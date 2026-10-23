@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "issuerURL": "https://authority.example.com",
+  "workloadID": "edfb6018-d231-4aca-a02f-91ab59568249",
+  "grantID": "docker-records-example",
+  "resourceOrigin": "https://workload.example.com",
+  "resourcePath": "/api/pap/records",
+  "resourceAction": "records.read",
+  "tenant": "docker-example",
+  "environment": "production",
+  "audience": "urn:pap:docker-example",
+  "trustOriginDeployment": false
+}

@@ -1,6 +1,8 @@
 # PAP-Netlify-Origin-0.2
 
-Status: proposed open profile and PAP 0.3.0 reference release. The network wire profile is unchanged. Document and original implementation license: Apache-2.0. This repository provides source, tests and deployment procedures; an installation must establish its own operational acceptance. This is a single-host reference suitable for evaluated pilots, not a ratified standard, provider endorsement, independently audited service or complete OAuth authorization server.
+Status: proposed open profile and PAP 0.4.0 reference release. The network wire profile is unchanged. Document and original implementation license: Apache-2.0. This repository provides source, tests and deployment procedures; an installation must establish its own operational acceptance. This is a single-host reference suitable for evaluated pilots, not a ratified standard, provider endorsement, independently audited service or complete OAuth authorization server.
+
+This document specifies the `netlify` identity adapter. Release 0.4 also implements `https-origin` for a registered public HTTPS server. It reuses these challenge, token and authorization routes with the separate origin validation and trust boundary defined in [identity adapters](identity-adapters.md). The operator's registered adapter selects the verifier; a caller cannot choose it in a public request.
 
 The requirements words MUST, MUST NOT, SHOULD and MAY apply only to this profile. The existing [local specification](specification.md) continues to define `PAP-local-0.1`. This document adds network issuance from a registered Netlify origin and external key custody. It deliberately names the weaker identity property: **control of a configured site**, not cloud workload attestation.
 

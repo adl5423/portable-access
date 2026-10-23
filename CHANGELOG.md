@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Add a closed identity-adapter contract and generic HTTPS-origin control profile while retaining existing Netlify registrations and policy bindings.
+- Add a provider-neutral asynchronous Python workload client with bounded in-memory proof publication and automatic credential renewal.
+- Add a standalone Docker HTTPS application, isolated TLS gateway and independent deployment instructions.
+- Add cross-adapter admission, SSRF, callback, renewal and container acceptance coverage.
+
+The generic profile proves origin control. It does not claim provider-signed workload identity, hardware attestation or automatic multi-replica proof sharing.
+
 ## 0.3.0
 
 - Prepare a public Apache-2.0 source release with independent deployment documentation, contribution policy, governance and pinned CI actions.

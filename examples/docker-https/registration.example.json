@@ -1,0 +1,13 @@
+{
+  "site_id": "edfb6018-d231-4aca-a02f-91ab59568249",
+  "identity_adapter": "https-origin",
+  "origin": "https://workload.example.com",
+  "subject": "docker-records-example",
+  "tenant": "docker-example",
+  "environment": "production",
+  "grant_id": "docker-records-example",
+  "grant_expires_at": 1893456000,
+  "trusted_site_contexts": true,
+  "resource_path": "/api/pap/records",
+  "resource_action": "records.read"
+}

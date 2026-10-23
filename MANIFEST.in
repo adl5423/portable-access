@@ -7,3 +7,4 @@ prune verification
 prune node_modules
 prune dist
 prune build
+recursive-include examples/docker-https *.py *.json *.md *.yaml *.yml Dockerfile* Caddyfile*

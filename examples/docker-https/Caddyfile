@@ -1,0 +1,44 @@
+{
+	admin off
+	auto_https disable_redirects
+	# Internal high ports let Caddy run as an unprivileged UID with every capability dropped.
+	http_port 8080
+	https_port 8443
+	servers {
+		max_header_size 16KB
+		timeouts {
+			read_header 5s
+			read_body 5s
+			write 35s
+			idle 30s
+		}
+	}
+}
+
+http://{$PAP_HOSTNAME:workload.example.com} {
+	redir https://{$PAP_HOSTNAME:workload.example.com}{uri} 308
+}
+
+{$PAP_HOSTNAME:workload.example.com} {
+	# Caddy manages the certificate in its private persistent /data volume.
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Cache-Control no-store
+	}
+	request_body {
+		max_size 1KB
+	}
+	reverse_proxy app:8080 {
+		# The application never reconstructs security-sensitive URLs from these headers.
+		header_up -Forwarded
+		header_up -X-Forwarded-Host
+		header_up -X-Forwarded-Proto
+		header_up -X-Forwarded-For
+		header_up Host {$PAP_HOSTNAME:workload.example.com}
+		transport http {
+			dial_timeout 3s
+			response_header_timeout 30s
+		}
+	}
+}

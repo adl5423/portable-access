@@ -1,6 +1,6 @@
 # Add Portable Access to another Netlify project
 
-Install the release **0.3.0** SDK with a separate workload identity and least-privilege grant for each trusted project. This guide does not reuse the demonstration identity, grant or data, or deploy/migrate a customer project automatically.
+Install the release **0.4.0** SDK with a separate workload identity and least-privilege grant for each trusted project. This guide does not reuse the demonstration identity, grant or data, or deploy/migrate a customer project automatically.
 
 The current profile protects **one registered GET path/action per Netlify site**. The complete example uses `GET /api/pap/records`, action `records.read`, and tenant-scoped records. It proves control of a registered production HTTPS origin; it is not provider-issued workload attestation or deployment/commit attestation. There is no browser SDK, credential getter, arbitrary HTTP proxy, write-operation profile or Railway/AWS/vendor-key connector. A provider that requires an API key needs a separate supported integration.
 
@@ -20,8 +20,8 @@ The package is **not published to an npm registry**. Download the SDK archive an
 
 ```sh
 mkdir -p vendor
-cp /path/to/downloaded/portable-access-netlify-0.3.0.tgz vendor/
-shasum -a 256 vendor/portable-access-netlify-0.3.0.tgz
+cp /path/to/downloaded/portable-access-netlify-0.4.0.tgz vendor/
+shasum -a 256 vendor/portable-access-netlify-0.4.0.tgz
 ```
 
 Expected archive SHA-256: `67a4ab58e95fcdc4a412f12a31baacad14f23986c3600354ed2c6372ff11b642`.
@@ -45,7 +45,7 @@ The following complete files form a minimal new project. For an existing applica
   "dependencies": {
     "@netlify/blobs": "10.7.13",
     "@netlify/functions": "5.3.0",
-    "@portable-access/netlify": "file:vendor/portable-access-netlify-0.3.0.tgz"
+    "@portable-access/netlify": "file:vendor/portable-access-netlify-0.4.0.tgz"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
