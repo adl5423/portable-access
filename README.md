@@ -4,6 +4,20 @@ PAP is an open specification and Apache-2.0 reference implementation for short-l
 
 Version 0.4.0 includes a Linux authority, OpenBao custody, Netlify and provider-neutral HTTPS origin identity adapters, independent Instabox cold-boot seal custody, operator tooling, three Netlify examples, and a standalone Docker HTTPS example. This is a production-oriented reference for controlled pilots. It has not had an independent security audit and does not provide high availability.
 
+## Watch the local protocol
+
+Watch the 61-second demo with zooms, highlighted results and on-screen explanations.
+
+https://github.com/user-attachments/assets/50118283-b246-4870-bdb1-9af081e34aee
+
+The recording shows actual local HTTPS requests: access succeeds, an identical proof is rejected, credentials and keys renew while the application is idle, and revocation persists across an authority runtime restart. It uses synthetic data under one OS user, with no upstream API key. The restart shown is a local runtime restart, not a VM reboot.
+
+Chapters: **0:14** replay rejection; **0:28** renewal and rotation; **0:43** revoked access and renewal; **0:47** persistent revocation after restart.
+
+[Download the original 1080p MP4](https://github.com/adl5423/portable-access/releases/download/v0.4.0/portable-access-live-demo-1080p.mp4) or [the smaller playback copy](https://github.com/adl5423/portable-access/releases/download/v0.4.0/portable-access-live-demo-web.mp4).
+
+A real installation requires a dedicated Linux host, OpenBao, Caddy, operator custody keys, workload registration and live acceptance checks. Follow [Deploy independently](#deploy-independently) for that setup.
+
 ## What it secures
 
 A signed credential binds an ephemeral application key to one subject, tenant, environment, audience and grant. Each request includes a fresh DPoP proof. The authority checks current policy and revocation online before returning data. Both the Netlify adapter and portable Python client renew their short-lived credentials and proof keys automatically. OpenBao stores issuer signing keys; provider credentials are encrypted using a distinct derived Transit key.
@@ -24,7 +38,7 @@ flowchart LR
 
 ## Try the local protocol
 
-Requires Python 3.12 or later. The accelerated local demo exercises issuance, renewal, issuer-key replacement, replay rejection and revocation without an upstream API key. Its processes share a local UID. Use the isolated Linux profile for real deployments.
+Requires Python 3.12 or later. The accelerated local demo exercises issuance, renewal, issuer-key replacement, wrong-key rejection and revocation without an upstream API key. Its processes share a local UID. Use the isolated Linux profile for real deployments.
 
 ```sh
 python3 -m venv .venv
@@ -34,7 +48,7 @@ python -m pip install --no-deps .
 pap demo
 ```
 
-For the complete conformance suite, install the locked development dependencies and follow [development](docs/development.md).
+For the Python conformance suite, including identical-proof replay rejection, install the locked development dependencies and the source checkout in editable mode as described in [development](docs/development.md), then run `pap conformance`.
 
 ## Deploy independently
 
