@@ -2,7 +2,6 @@
 
 from ..process_security import harden_secret_process
 from ..process_security import resource as resource
-
 from .custody import CustodyError
 
 

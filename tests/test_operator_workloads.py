@@ -104,6 +104,58 @@ def test_ready_requires_enabled_trusted_exact_registration(tmp_path, adapter):
     assert checked["deployment_accepted"] is False
 
 
+@pytest.mark.parametrize("fields", [("resourcePath",), ("resourceAction",), ("resourcePath", "resourceAction")])
+@pytest.mark.parametrize("use_null", [False, True])
+def test_netlify_optional_resource_defaults_match_sdk_without_mutating_input(tmp_path, fields, use_null):
+    _, _, config, registration = make_bundle(tmp_path, adapter="netlify", enabled=True, trust_origin=True)
+    for field in fields:
+        if use_null:
+            config[field] = None
+        else:
+            del config[field]
+    before = copy.deepcopy(config)
+    checked = check_workload(config, registration, authority_config=authority_for(registration),
+                             require_ready=True, now=NOW)
+    assert checked["ok"] and checked["ready"]
+    assert checked["findings"] == []
+    assert config == before
+
+
+@pytest.mark.parametrize("field", ["resourcePath", "resourceAction"])
+@pytest.mark.parametrize("value", [False, 0, {}, [], ""])
+def test_netlify_resource_defaults_do_not_coerce_invalid_values(tmp_path, field, value):
+    _, _, config, registration = make_bundle(tmp_path, adapter="netlify", enabled=True, trust_origin=True)
+    config[field] = value
+    checked = check_workload(config, registration, authority_config=authority_for(registration), now=NOW)
+    assert not checked["ok"] and not checked["ready"]
+    assert checked["findings"][-1]["code"] == "invalid_public_config_binding"
+
+
+@pytest.mark.parametrize("field, registration_field, custom", [
+    ("resourcePath", "resource_path", "/api/custom"),
+    ("resourceAction", "resource_action", "custom.read"),
+])
+def test_netlify_omitted_resource_still_has_to_match_exact_registration(tmp_path, field, registration_field, custom):
+    _, _, config, registration = make_bundle(tmp_path, adapter="netlify", enabled=True, trust_origin=True)
+    del config[field]
+    registration["site"][registration_field] = custom
+    checked = check_workload(config, registration, authority_config=authority_for(registration), now=NOW)
+    assert not checked["ok"] and not checked["ready"]
+    assert {"code": "binding_mismatch", "field": "config." + field, "severity": "error"} in checked["findings"]
+
+
+@pytest.mark.parametrize("field", ["resourcePath", "resourceAction"])
+@pytest.mark.parametrize("use_null", [False, True])
+def test_https_resource_fields_remain_required(tmp_path, field, use_null):
+    _, _, config, registration = make_bundle(tmp_path, enabled=True, trust_origin=True)
+    if use_null:
+        config[field] = None
+    else:
+        del config[field]
+    checked = check_workload(config, registration, authority_config=authority_for(registration), now=NOW)
+    assert not checked["ok"] and not checked["ready"]
+
+
 def test_require_ready_without_authority_config_fails(tmp_path):
     _, _, config, registration = make_bundle(tmp_path, enabled=True, trust_origin=True)
     checked = check_workload(config, registration, require_ready=True, now=NOW)

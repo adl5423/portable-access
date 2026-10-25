@@ -170,10 +170,11 @@ sudo cp -p /etc/pap/authority.json /root/pap-onboarding/authority.before.json
 sudo /opt/pap/venv/bin/python -I - <<'PY'
 import json, os, time
 from pathlib import Path
+from pap.configuration import parse_config_json
 from pap.production import ProductionConfig, SiteConfig, load_config
 
 current = load_config(Path("/etc/pap/authority.json"))
-handoff = json.loads(Path("/root/pap-onboarding/pap-registration.json").read_text())
+handoff = parse_config_json(Path("/root/pap-onboarding/pap-registration.json").read_bytes())
 if set(handoff) != {"issuer", "audience", "site"}:
     raise SystemExit("invalid handoff schema")
 if handoff["issuer"] != current.issuer or handoff["audience"] != current.audience:

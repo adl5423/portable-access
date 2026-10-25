@@ -21,6 +21,7 @@ _COMMON_CONFIG = {
     "enabled", "issuerURL", "grantID", "resourceOrigin", "resourcePath",
     "resourceAction", "tenant", "environment", "audience",
 }
+_NETLIFY_RESOURCE_DEFAULTS = {"resourcePath": "/api/pap/records", "resourceAction": "records.read"}
 _SITE_REQUIRED = {
     "site_id", "origin", "subject", "tenant", "environment", "grant_id",
     "grant_expires_at", "trusted_site_contexts",
@@ -71,15 +72,24 @@ def _public_config(value: object, adapter: str) -> WorkloadConfig:
         workload_key, trust_key = "siteID", "productionSiteIsolated"
     else:
         workload_key, trust_key = "workloadID", "trustOriginDeployment"
+    allowed = _COMMON_CONFIG | {workload_key, trust_key}
+    required = allowed - _NETLIFY_RESOURCE_DEFAULTS.keys() if adapter == "netlify" else allowed
     if (
         not isinstance(value, dict)
-        or set(value) != _COMMON_CONFIG | {workload_key, trust_key}
+        or not required <= value.keys()
+        or not value.keys() <= allowed
         or type(value.get("enabled")) is not bool
         or type(value.get(trust_key)) is not bool
     ):
         raise WorkloadSetupError("invalid_public_config_schema", "config")
     if value["enabled"] and not value[trust_key]:
         raise WorkloadSetupError("origin_trust_acknowledgment_required", "config")
+    if adapter == "netlify":
+        # Match the SDK's nullish defaults without changing the reviewed input.
+        value = {
+            **value,
+            **{key: default for key, default in _NETLIFY_RESOURCE_DEFAULTS.items() if value.get(key) is None},
+        }
     normalized = {
         **{key: value[key] for key in _COMMON_CONFIG},
         "workloadID": value[workload_key],

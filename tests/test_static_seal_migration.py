@@ -148,11 +148,19 @@ class FakeAPI:
 
 
 @pytest.fixture
-def fixture(tmp_path, operator):
+def fixture(tmp_path, operator, monkeypatch):
     tmp_path.chmod(0o700)
     # BSD temp children inherit the directory group; match this synthetic host's
     # declared service group before creating its protected inputs.
     os.chown(tmp_path, -1, os.getegid())
+    # The readonly checkout can belong to a different UID in the offline runner.
+    # Model root-owned installed helpers inside this synthetic owner's private
+    # host, without bypassing their production ownership or fingerprint checks.
+    for module in (m, b):
+        source = Path(module.__file__)
+        installed = tmp_path / source.name
+        write(installed, source.read_bytes(), mode=0o644)
+        monkeypatch.setattr(module, "__file__", str(installed))
     enrollment, state, runtime = tmp_path / "enrollment", tmp_path / "state", tmp_path / "private"
     enrollment.mkdir(mode=0o700)
     state.mkdir(mode=0o700)
@@ -302,6 +310,18 @@ def test_plan_is_read_only_and_binds_every_source_and_input(fixture):
     assert not fixture.paths.journal.exists() and not fixture.paths.receipt.exists()
     assert not fixture.api.posts and not fixture.api.restarts
     assert all(method == "GET" for method, _ in fixture.api.calls)
+
+
+@pytest.mark.parametrize("module", [m, b], ids=["migration", "bootstrap"])
+def test_changed_installed_helper_invalidates_plan_before_mutation(fixture, module):
+    migrator = fixture.create()
+    planned = migrator.plan()
+    helper = Path(module.__file__)
+    helper.write_bytes(helper.read_bytes() + b"\n# changed after planning\n")
+    with pytest.raises(m.MigrationError, match="migration_preconditions_changed"):
+        migrator.apply(planned, expected_plan_sha256=planned["plan_sha256"], shares=SHARES[:3])
+    assert not fixture.paths.journal.exists() and not fixture.paths.receipt.exists()
+    assert not fixture.api.posts and not fixture.api.restarts
 
 
 @pytest.mark.parametrize("clock_kind", ["advancing_nineteen_microseconds", "actual_wall_clock"])
