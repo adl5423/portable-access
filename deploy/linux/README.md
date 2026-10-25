@@ -1,6 +1,6 @@
-# Isolated Linux authority for Netlify applications
+# Isolated Linux authority
 
-The Netlify application runs remotely. A separate Linux host runs the PAP authority, an OpenBao Transit signing service, and Caddy. No AWS account or AWS runtime is required. A VPS, a dedicated server, or a suitable VM can host this profile.
+Applications run on Netlify or a separately registered HTTPS server. A dedicated Linux host runs the PAP authority, an OpenBao Transit signing service, and Caddy. No AWS account or AWS runtime is required. A VPS, a dedicated server, or a suitable VM can host this profile.
 
 These assets establish distinct operating-system identities and private storage. They are a single-host deployment profile, not an availability cluster or an independent security certification. Provisioning a host, initializing OpenBao, enrolling an actual Netlify site, and testing the public endpoint are separate acceptance steps.
 
@@ -23,7 +23,9 @@ The service units drop capabilities, disallow privilege gain, hide other UIDs' p
 
 ## Host prerequisites
 
-Use a maintained Linux distribution with systemd 252 or later. Configure host patching, time synchronization, a firewall, encrypted persistent disks, protected backups, and monitoring. Disable host swap for this OpenBao integrated-storage profile. The enrollment units also set `MemorySwapMax=0` for the KMS and broker and grant neither process capabilities. OpenBao 2.7 does not accept the older `disable_mlock` configuration field, so the enrollment configuration omits it. Root, the kernel, and the host administrator remain trusted.
+Use a maintained Linux distribution with systemd 252 or later. Configure host patching, time synchronization, a firewall, encrypted persistent disks, protected backups, and monitoring. Disable host swap for this OpenBao integrated-storage profile. The authority, KMS, enrollment broker, TLS gateway and boot units set `MemorySwapMax=0` and `LimitCORE=0`; inspect the effective properties on the intended host. Both supplied OpenBao profiles target 2.7 and omit the older `disable_mlock` configuration field. Root, the kernel, and the host administrator remain trusted.
+
+The Python authority, enrollment and operator entry points disable ordinary core dumps before loading credentials. On Linux they also disable process dumpability and verify the result, restricting same-UID inspection. A failure stops startup. These settings do not lock every Python allocation in physical memory, erase copies already written elsewhere, or contain host root. Validate the actual systemd and kernel controls rather than treating the unit files as proof of enforcement.
 
 For the generic Caddy TLS profile, only TCP 80 and 443 should be public. The reviewed Instabox variant instead publishes only guest HTTP port 8080 behind the provider's HTTPS termination. Restrict SSH to the administrative network. Never publish OpenBao ports 8200/8201, authority port 9480, or either administrative socket through a container port mapping or a reverse proxy. Generic Caddy needs outbound DNS and HTTPS for automatic public certificate management. The authority needs outbound HTTPS to fixed enrolled Netlify origins for site assertions. Enabled provider connectors additionally need HTTPS to `api.openai.com`, `api.nasa.gov` and `developer.nlr.gov`; they do not accept caller-selected destinations. The seal helper needs the separately registered custody origin.
 
@@ -32,7 +34,7 @@ Install reviewed releases of these programs before running the installer:
 - PAP and its pinned runtime dependencies in a root-owned virtual environment at `/opt/pap/venv`. Its executable must be `/opt/pap/venv/bin/pap`. Keep the source, environment, and dependency directories unwritable by all service accounts.
 - OpenBao at `/usr/local/bin/bao`.
 - Caddy at `/usr/bin/caddy`.
-- Python 3.12 or later for PAP. The host installer uses the Python standard library and invokes the installed PAP interpreter for schema validation.
+- Python 3.12 or later for PAP. The host installer uses the Python standard library, loads the shared standard-library configuration reader from the reviewed source checkout, and invokes the installed PAP interpreter for schema validation. Protect that source checkout and its deployment assets from untrusted writes before running it as root.
 
 Do not run application builds, package installation, or untrusted project code under `pap-issuer`, `pap-kms`, `pap-admin`, or `pap-proxy`. A service UID is a security boundary. An application sharing that UID has that service's permissions.
 
@@ -58,7 +60,7 @@ sudo python3 deploy/linux/install.py \
   --enrollment-ca-key /root/pap-bootstrap/enrollment-ca-key.pem
 ```
 
-Base the input on `authority.enrollment.example.json`. The installer resolves `enrollment_uid` and `admin_uid` to the installed nonroot accounts, then validates the complete public policy through the installed runtime's `ProductionConfig`. The isolated interpreter receives JSON on stdin, inherits no application environment and prints only a fixed success marker. Invalid site identities or policy stop installation before configuration or credential files are written. Enrollment and the six pre-provisioned certificate arguments are mutually exclusive. The installer creates no initial client certificate or signing key and does not initialize or unseal OpenBao. Start and verify `pap-enroller.service` first, confirm its listener generation, then bootstrap OpenBao and start the authority.
+Base the input on `authority.enrollment.example.json`. Duplicate JSON members, nonfinite numbers, invalid UTF-8 and oversized configuration inputs are rejected before normalization or account creation. The installer resolves `enrollment_uid` and `admin_uid` to the installed nonroot accounts, then validates the complete public policy through the installed runtime's `ProductionConfig`. The isolated interpreter receives JSON on stdin, inherits no application environment and prints only a fixed success marker. Invalid site identities or policy stop installation before configuration or credential files are written. Enrollment and the six pre-provisioned certificate arguments are mutually exclusive. The installer creates no initial client certificate or signing key and does not initialize or unseal OpenBao. Start and verify `pap-enroller.service` first, confirm its listener generation, then bootstrap OpenBao and start the authority.
 
 The issuer certificate-auth role pins only the enrollment CA and the exact issuer identity. This deployment dedicates the whole `transit/` mount to PAP. Its OpenBao 2.7 ACL allows constrained nonexportable P-256 key creation and JWS signing, and denies rotate/config/trim/delete/export and administrative operations. The ACL does not enforce a `pap-` key-name prefix; the isolated authority chooses those names. Never place another application's keys in this dedicated mount or interpret a prefix convention as an authorization boundary. Bootstrap verifies actual signing and denied operations before revoking its root token.
 

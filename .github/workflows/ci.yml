@@ -43,6 +43,29 @@ jobs:
           python-version: '3.14'
       - name: Verify isolated images, fresh volumes and trusted HTTPS gateway
         run: python examples/docker-https/tests/container_acceptance.py
+  offline-python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build the pinned dependency-only test toolchain
+        run: docker build --file deploy/testing/Dockerfile --tag pap-offline-tests .
+      - name: Verify security and configuration without external network or host credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --cpus 2 --memory 1g --memory-swap 1g --pids-limit 128 \
+            --ulimit core=0:0 --ulimit nofile=1024:1024 --ulimit fsize=67108864:67108864 \
+            --tmpfs /scratch:rw,nosuid,nodev,size=512m,uid=10001,gid=10001,mode=700 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=700 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --env HOME=/scratch --env TMPDIR=/scratch --env USER=pap-test \
+            --env PYTHONDONTWRITEBYTECODE=1 --env PYTHONPATH=/src \
+            pap-offline-tests tests deploy/instabox/tests examples/docker-https/tests
   node:
     runs-on: ubuntu-24.04
     strategy:

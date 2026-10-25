@@ -49,6 +49,7 @@ LimitNOFILE=256
 TasksMax=32
 MemoryMax=256M
 MemorySwapMax=0
+LimitCORE=0
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=pap-enroller

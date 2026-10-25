@@ -64,6 +64,26 @@ No hosted PAP account, proprietary service, paid license, AWS account, or privat
 
 The [Docker HTTPS guide](docs/docker-https.md) provides a dedicated single-process application, Caddy TLS gateway, public configuration and operator registration. The Python SDK renews ephemeral credentials automatically and keeps private proof keys in memory. No Netlify account or API environment secret is required for this application adapter. Origin control is the identity evidence; it is not a cloud-signed workload attestation. Multiple application processes require a shared proof store and separate acceptance tests.
 
+## Prepare a workload safely
+
+`pap-operator workload-init` creates a matching public application configuration and authority registration proposal. It generates a fresh identity for an HTTPS workload and leaves access disabled until you acknowledge the origin's trust boundary and register the grant. These commands prepare and check public configuration; they do not contact a provider, create custody keys or change a running authority.
+
+```sh
+pap-operator workload-init \
+  --adapter https-origin \
+  --issuer https://authority.example.com \
+  --audience urn:pap:example \
+  --origin https://workload.example.com \
+  --tenant example \
+  --output-directory ./workload-config
+
+pap-operator workload-check \
+  --config ./workload-config/config.public.json \
+  --registration ./workload-config/pap-registration.json
+```
+
+Use your own registered HTTPS origins. A consistent disabled proposal still requires installation and live acceptance. Follow the [operator guide](docs/operator-cli.md) to acknowledge trust, verify the proposal against the authority configuration and require a configuration ready for enrollment.
+
 ## Repository map
 
 | Path | Purpose |

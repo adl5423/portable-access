@@ -150,6 +150,9 @@ class FakeAPI:
 @pytest.fixture
 def fixture(tmp_path, operator):
     tmp_path.chmod(0o700)
+    # BSD temp children inherit the directory group; match this synthetic host's
+    # declared service group before creating its protected inputs.
+    os.chown(tmp_path, -1, os.getegid())
     enrollment, state, runtime = tmp_path / "enrollment", tmp_path / "state", tmp_path / "private"
     enrollment.mkdir(mode=0o700)
     state.mkdir(mode=0o700)

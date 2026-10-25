@@ -16,15 +16,25 @@ Applications receive public configuration only. They receive no OpenBao credenti
 
 ## 2. Install the verified SDK archive
 
-The package is **not published to an npm registry**. Download the SDK archive and SHA256SUMS from the GitHub Release, verify its checksum, then copy it into the project's `vendor/` directory:
+The package is **not published to an npm registry**. Download `portable-access-netlify-0.4.0.tgz` and `SHA256SUMS` from the same [v0.4.0 GitHub Release](https://github.com/adl5423/portable-access/releases/tag/v0.4.0). In that download directory, verify the named archive before copying it into the project's `vendor/` directory:
 
 ```sh
-mkdir -p vendor
-cp /path/to/downloaded/portable-access-netlify-0.4.0.tgz vendor/
-shasum -a 256 vendor/portable-access-netlify-0.4.0.tgz
+python3 - <<'PY'
+import hashlib
+from pathlib import Path
+
+name = "portable-access-netlify-0.4.0.tgz"
+entries = [line.split() for line in Path("SHA256SUMS").read_text().splitlines()]
+matches = [parts[0] for parts in entries if len(parts) == 2 and parts[1] == name]
+if len(matches) != 1 or hashlib.sha256(Path(name).read_bytes()).hexdigest() != matches[0]:
+    raise SystemExit("SDK checksum verification failed")
+print("SDK checksum verified against this release's SHA256SUMS")
+PY
+mkdir -p /path/to/project/vendor
+cp portable-access-netlify-0.4.0.tgz /path/to/project/vendor/
 ```
 
-Expected archive SHA-256: `67a4ab58e95fcdc4a412f12a31baacad14f23986c3600354ed2c6372ff11b642`.
+Use the checksum file published alongside the selected version. A checksum copied from a different build or release is not a substitute. The check verifies agreement with the release metadata; it does not provide an independent signature or security audit.
 
 The following complete files form a minimal new project. For an existing application, merge the dependencies, checks and function configuration into its existing files. Preserve its framework adapter, route ownership, end-user authentication and release process.
 
@@ -114,49 +124,37 @@ mkdir -p src tools netlify/functions
 
 Review and commit `package-lock.json`; subsequent builds use `npm ci --ignore-scripts`. The release builder verifies standalone examples with their vendored SDK. A new consumer's initial install resolves its own transitive lock, which requires its own review.
 
-## 3. Generate public project configuration once
+## 3. Prepare matching public files once
 
-Save this complete setup utility and replace its five uppercase values with actual approved public values. It uses the same public `/protocol` validator as the runtime, creates a subject from this new site's UUID, and chooses a fresh grant UUID.
+Use `pap-operator workload-init` from this checkout or its corresponding operator release. It generates a fresh subject and grant, uses the actual Netlify site UUID, validates both public files together, and creates a new owner-only output directory. It never accesses operator custody, a provider credential or a network service. The existing v0.4.0 application SDK accepts the generated Netlify configuration.
 
-<!-- file: tools/configure-pap.mjs -->
-```javascript
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { validateConfig } from "@portable-access/netlify/protocol";
-
-const issuerURL = "https://YOUR_ISSUER_HOST";
-const siteID = "YOUR_LOWERCASE_SITE_UUID";
-const resourceOrigin = "https://YOUR_TRUSTED_SITE.netlify.app";
-const tenant = "YOUR_PROJECT_TENANT";
-const audience = "YOUR_EXISTING_AUTHORITY_AUDIENCE";
-const approvedGrantDays = 30;
-const config = validateConfig({
-  enabled: true, issuerURL, siteID, grantID: randomUUID(), resourceOrigin,
-  resourcePath: "/api/pap/records", resourceAction: "records.read", tenant,
-  environment: "production", audience, productionSiteIsolated: true
-});
-const registration = {
-  issuer: config.issuerURL, audience: config.audience,
-  site: {
-    site_id: config.siteID, origin: config.resourceOrigin,
-    subject: `netlify-${config.siteID}`, tenant: config.tenant,
-    environment: config.environment, grant_id: config.grantID,
-    grant_expires_at: Math.floor(Date.now() / 1000) + approvedGrantDays * 86400,
-    trusted_site_contexts: true,
-    resource_path: config.resourcePath, resource_action: config.resourceAction
-  }
-};
-await mkdir("src", { recursive: true });
-await writeFile("src/pap.public.json", JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o644 });
-await writeFile("pap-registration.json", JSON.stringify(registration, null, 2) + "\n", { flag: "wx", mode: 0o644 });
-console.log("Created public configuration and operator registration handoff.");
-```
+Replace the public values below with the operator-approved issuer, existing audience, site UUID, production origin and tenant. The example explicitly acknowledges the origin's administrators and prepares an enabled application configuration. Hold deployment until the operator has registered the matching grant.
 
 ```sh
-node tools/configure-pap.mjs
+mkdir -m 0700 pap-onboarding
+pap-operator workload-init \
+  --adapter netlify \
+  --issuer https://YOUR_ISSUER_HOST \
+  --audience YOUR_EXISTING_AUTHORITY_AUDIENCE \
+  --origin https://YOUR_TRUSTED_SITE.netlify.app \
+  --workload-id YOUR_LOWERCASE_SITE_UUID \
+  --tenant YOUR_PROJECT_TENANT \
+  --grant-days 7 \
+  --output-directory pap-onboarding/new-workload \
+  --trust-origin --enable
+mkdir -p src
+cp pap-onboarding/new-workload/config.public.json src/pap.public.json
+cp pap-onboarding/new-workload/pap-registration.json pap-registration.json
+pap-operator workload-check \
+  --config src/pap.public.json \
+  --registration pap-registration.json
 ```
 
-Commit the reviewed `src/pap.public.json` and send the public `pap-registration.json` handoff to the authority operator. Neither contains a secret. Do not run this utility during normal builds: exclusive creation prevents silently replacing a grant. If interrupted between its two writes, inspect the files before completing setup instead of regenerating blindly.
+Omitting both `--trust-origin` and `--enable` creates a disabled proposal with both trust acknowledgments false. `--enable` without `--trust-origin` fails. New grants default to seven days; `--grant-days` accepts 1–30. Renewal never extends this absolute expiry. A Netlify workload requires `--workload-id`; use its actual site UUID rather than a generated substitute.
+
+The checker reports `ok: true, ready: false` for a consistent proposal whose authority registration has not been checked. It does not contact the authority, issue a credential, or change a file. It never prints untrusted JSON values or unknown member names. Use `--require-ready` with an authority configuration after operator registration to enforce the public linkage check.
+
+Commit the reviewed `src/pap.public.json` and send `pap-registration.json` to the authority operator. Both contain public policy only. Do not run initialization during normal builds or regenerate an existing workload: exclusive output creation prevents silently replacing a grant. If interrupted, preserve and inspect the partial directory before choosing another destination. See [operator tooling](operator-cli.md#prepare-and-check-public-workload-configuration) for the Docker profile and the exact meaning of readiness.
 
 Site UUIDs are lowercase canonical text. Subject, tenant and grant start with an ASCII letter/digit and contain at most 80 ASCII letters, digits, underscores or hyphens. Audience is at most 200 characters and the authority rejects whitespace. Origins have no custom domain, preview prefix, port, path or trailing slash. The resource request accepts no query parameters.
 
@@ -164,7 +162,7 @@ Site UUIDs are lowercase canonical text. Subject, tenant and grant start with an
 
 There is no `pap grant create` command or public registration endpoint in this release. A trusted host operator adds the binding to root-owned `/etc/pap/authority.json`. Startup provisions only its named action and persists its absolute expiry. Preserve all existing registrations and revocations.
 
-Place the reviewed public handoff at `/root/pap-onboarding/pap-registration.json` through the existing approved transfer method. On the authority host, create a separate candidate and validate it with the installed runtime:
+Place the reviewed public handoff at `/root/pap-onboarding/pap-registration.json` and its paired application configuration at `/root/pap-onboarding/config.public.json` through the existing approved transfer method. On the authority host, create a separate candidate and validate it with the installed runtime:
 
 ```sh
 sudo install -d -m 0700 /root/pap-onboarding
@@ -199,6 +197,11 @@ with os.fdopen(fd, "w") as stream:
 print("Validated new-site candidate; existing registrations preserved.")
 PY
 sudo diff -u /etc/pap/authority.json /root/pap-onboarding/authority.candidate.json
+sudo /opt/pap/venv/bin/pap-operator workload-check \
+  --config /root/pap-onboarding/config.public.json \
+  --registration /root/pap-onboarding/pap-registration.json \
+  --authority-config /root/pap-onboarding/authority.candidate.json \
+  --require-ready
 ```
 
 A nonzero `diff` status is expected for the new binding. Review the exact change and expiry, then activate the reviewed candidate atomically on the same filesystem and restart only the authority:

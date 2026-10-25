@@ -7,10 +7,8 @@ No HTTP route can provision an identity or choose a signing provider.
 import asyncio
 import contextlib
 import fcntl
-import ipaddress
 import json
 import os
-import re
 import signal
 import socket
 import stat
@@ -20,7 +18,6 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
 
 from aiohttp import web
 from pydantic import Field, field_validator, model_validator
@@ -28,11 +25,14 @@ from pydantic import Field, field_validator, model_validator
 from . import __version__
 from .authority import Authority, Config
 from .certificates import CertificateManager
-from .cloud import Site, SiteRegistry, fetch_site_record
+from .cloud import Site, SiteRegistry, fetch_site_record, validate_sites
+from .configuration import parse_config_json
 from .connectors import ConnectorConfig, ConnectorStore, CredentialRequest, generate
 from .crypto import Denied
 from .enrollment import UnixEnrollmentClient
+from .identity_adapters import https_origin
 from .local import LOG, StrictModel, body, errors, peer_uid
+from .process_security import harden_secret_process
 from .runtime import Event
 from .signers import OpenBaoSigner, _trusted_file
 from .storage import Store, private_directory
@@ -115,35 +115,11 @@ class ProductionConfig(StrictModel):
     @field_validator("issuer")
     @classmethod
     def public_origin(cls, value):
-        try:
-            parsed = urlsplit(value)
-            host = parsed.hostname or ""
-            valid = (
-                value == "https://" + host
-                and parsed.scheme == "https"
-                and parsed.netloc == host
-                and not parsed.path
-                and not parsed.query
-                and not parsed.fragment
-                and not parsed.username
-                and not parsed.password
-                and "." in host
-                and re.fullmatch(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", host)
-                and not any(c.isspace() for c in value)
-            )
-            try:
-                ipaddress.ip_address(host)
-                valid = False
-            except ValueError:
-                pass
-        except ValueError:
-            valid = False
-        if not valid:
-            raise ValueError("public HTTPS DNS origin required")
-        return value
+        return https_origin(value)
 
     @model_validator(mode="after")
     def bindings(self):
+        validate_sites([Site(**site.model_dump()) for site in self.sites])
         state = Path(self.state_dir)
         if not state.is_absolute() or ".." in state.parts:
             raise ValueError("absolute state directory required")
@@ -173,15 +149,7 @@ def load_config(path: Path) -> ProductionConfig:
     if not root_owned:
         raise ValueError("production configuration must be owned by root")
 
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("duplicate configuration member")
-            result[key] = value
-        return result
-
-    return ProductionConfig.model_validate(json.loads(raw, object_pairs_hook=unique))
+    return ProductionConfig.model_validate(parse_config_json(raw, maximum_bytes=1024 * 1024))
 
 
 def require_isolated_linux():
@@ -671,6 +639,7 @@ class ProductionRuntime:
 
 async def serve(config_path: Path):
     require_isolated_linux()
+    harden_secret_process()
     config = load_config(config_path)
     listener = activated_admin_socket(config.admin_uid)
     runtime = ProductionRuntime(config)
