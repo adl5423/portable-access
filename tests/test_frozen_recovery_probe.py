@@ -68,6 +68,7 @@ def ca_and_leaf(*, server=False, ca=None, ca_key=None):
 @pytest.fixture
 def fixture(tmp_path, monkeypatch):
     tmp_path.chmod(0o700)
+    os.chown(tmp_path, -1, os.getegid())
     issuer_root, listener_root = tmp_path / "issuer", tmp_path / "listener"
     issuer_root.mkdir(mode=0o700)
     listener_root.mkdir(mode=0o710)

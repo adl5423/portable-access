@@ -83,7 +83,9 @@ async def run(args):
         import threading
 
         from .enrollment import EnrollmentServer, load_enrollment_config
+        from .process_security import harden_secret_process
 
+        harden_secret_process()
         server = EnrollmentServer(load_enrollment_config(args.config))
         stopped = threading.Event()
         loop = asyncio.get_running_loop()

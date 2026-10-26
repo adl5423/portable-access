@@ -4,6 +4,47 @@
 
 This tool does not initialize an existing OpenBao installation, reset Raft, bypass an incident lock, or turn a snapshot into a tested disaster-recovery plan. Read [the independent deployment guide](../deploy/linux/README.md), [the recovery contract](operator-recovery.md), and [the cold-boot profile](cold-boot-profile.md) before changing infrastructure custody.
 
+## Prepare and check public workload configuration
+
+The setup commands need no custody key and make no network calls. They prepare public policy for an existing authority. Use the authority's actual issuer and global audience; no discovery endpoint or caller-supplied claim can create that trust.
+
+Create a disabled Docker/HTTPS proposal in a new directory beneath an existing trusted parent:
+
+```sh
+mkdir -m 0700 pap-onboarding
+pap-operator workload-init \
+  --adapter https-origin \
+  --issuer https://authority.example.com \
+  --audience urn:pap:your-existing-audience \
+  --origin https://workload.example.com \
+  --tenant your-project \
+  --grant-days 7 \
+  --output-directory pap-onboarding/new-workload
+pap-operator workload-check \
+  --config pap-onboarding/new-workload/config.public.json \
+  --registration pap-onboarding/new-workload/pap-registration.json
+```
+
+Replace the example origins and audience before running the command. Initialization produces a fresh workload UUID, subject and grant. The Netlify variant uses `--adapter netlify` and requires `--workload-id` containing the actual Netlify site UUID. It emits `siteID`/`productionSiteIsolated`; the HTTPS variant emits `workloadID`/`trustOriginDeployment`. Both use the same operator registration contract. Optional `--resource-path` and `--resource-action` select one exact GET resource, defaulting to `/api/pap/records` and `records.read`.
+
+New grants expire after seven days unless `--grant-days` supplies a value from 1 through 30. The expiry is absolute; application credential renewal cannot extend it. The output directory is created exclusively with mode `0700`, and the two public files use `0600` while being reviewed. Existing destinations, symlinked parents and shared-writable parents are rejected. If creation fails halfway through, inspect the retained directory; rerunning never overwrites it. Install reviewed public files with the ownership/mode required by their destination rather than sharing the entire operator directory.
+
+Defaults are `enabled: false` with both origin trust acknowledgments false. A false-trust registration is a proposal and cannot be appended directly to a running authority's configuration. After reviewing every principal that can control the origin, `--trust-origin --enable` can prepare an enabled pair in a new directory. Those flags do not register the grant or authorize a deployment. Preserve the generated IDs when installing the reviewed pair; do not regenerate a grant to work around a denial.
+
+On the trusted authority host, check the reviewed application configuration and handoff against a separately prepared authority candidate:
+
+```sh
+pap-operator workload-check \
+  --config /root/pap-onboarding/config.public.json \
+  --registration /root/pap-onboarding/pap-registration.json \
+  --authority-config /root/pap-onboarding/authority.candidate.json \
+  --require-ready
+```
+
+The check compares issuer, audience, adapter, workload, grant, tenant, environment, exact resource and absolute expiry, and rejects duplicate authority bindings. It reads files without following symlinks or accepting shared write access. It returns JSON with fixed finding codes and known field paths; it does not echo JSON values, unknown member names or custody material. Exit status is `0` for a valid check and `2` for an error. Without `--require-ready`, a consistent disabled or unregistered proposal returns `ok: true, ready: false` with warnings.
+
+`ready` means only that an enabled, acknowledged public pair matches the supplied authority configuration. The command reports `scope: public_workload_bindings` and `deployment_accepted: false`. It does not load KMS keys, inspect host service identities, contact a provider, read historical revocation state, mutate policy, or prove DNS, TLS, process isolation, backup restoration or platform-event acceptance. A public handoff and configuration file are not permission to restore a revoked grant. Apply reviewed candidates through the existing private operator procedure, then complete the adapter's genuine live acceptance checks.
+
 ## Custody choices
 
 | Backend | Persistent material | Operational constraint |

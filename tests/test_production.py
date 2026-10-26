@@ -1,6 +1,7 @@
 """Production HTTP wiring and actor behavior; separate suites exercise real KMS/Linux."""
 
 import asyncio
+import contextlib
 import copy
 import json
 import os
@@ -67,6 +68,10 @@ def configuration(tmp_path):
         "https://authority.example.test\n",
         "https://127.0.0.1",
         "https://authority.example.test/path",
+        "https://authority.local",
+        "https://authority.localhost",
+        "https://authority.internal",
+        "https://authority.home.arpa",
     ],
 )
 def test_config_requires_canonical_public_https_issuer(tmp_path, issuer):
@@ -91,6 +96,9 @@ def test_config_requires_canonical_public_https_issuer(tmp_path, issuer):
         lambda x: x["kms"].update(client_key="/other/current/client-key.pem"),
         lambda x: x["sites"][0].update(trusted_site_contexts=False),
         lambda x: x["sites"][0].update(environment="deploy-preview"),
+        lambda x: x["sites"][0].update(grant_expires_at=float("nan")),
+        lambda x: x["sites"][0].update(grant_expires_at=float("inf")),
+        lambda x: x["sites"][0].update(grant_expires_at=float("-inf")),
     ],
 )
 def test_config_fails_closed_on_weaker_profiles(tmp_path, mutation):
@@ -106,6 +114,46 @@ def test_empty_site_registry_is_valid_and_defaults_are_deliberate(tmp_path):
     config = ProductionConfig.model_validate(value)
     assert config.signing_interval == 86400 and config.token_ttl == 60
     assert config.sites == []
+
+
+@pytest.mark.parametrize("field", ["site_id", "origin", "subject", "grant_id"])
+def test_duplicate_sites_fail_during_config_admission_before_state_or_kms(tmp_path, monkeypatch, field):
+    value = configuration(tmp_path)
+    second = {
+        **value["sites"][0],
+        "site_id": str(uuid.uuid4()),
+        "origin": "https://pap-second.netlify.app",
+        "subject": "netlify-second",
+        "grant_id": "second-grant",
+    }
+    second[field] = value["sites"][0][field]
+    value["sites"].append(second)
+    events = []
+
+    def forbidden(*args, **kwargs):
+        events.append("side-effect")
+        raise AssertionError("invalid configuration reached state or key custody")
+
+    monkeypatch.setattr(production, "OpenBaoSigner", forbidden)
+    monkeypatch.setattr(production, "Store", forbidden)
+    monkeypatch.setattr(production, "CertificateManager", forbidden)
+    with pytest.raises(ValidationError, match="site bindings must be unique"):
+        config = ProductionConfig.model_validate(value)
+        ProductionRuntime(config)
+    assert events == []
+    assert not (tmp_path / "authority").exists()
+
+
+def test_distinct_sites_can_share_a_tenant(tmp_path):
+    value = configuration(tmp_path)
+    value["sites"].append({
+        **value["sites"][0],
+        "site_id": str(uuid.uuid4()),
+        "origin": "https://pap-second.netlify.app",
+        "subject": "netlify-second",
+        "grant_id": "second-grant",
+    })
+    assert len(ProductionConfig.model_validate(value).sites) == 2
 
 
 @pytest.mark.parametrize(
@@ -211,6 +259,45 @@ def test_config_file_requires_root_policy_owner(tmp_path):
     path.chmod(0o600)
     with pytest.raises(ValueError, match="owned by root"):
         production.load_config(path)
+
+
+@pytest.mark.parametrize(
+    "raw, diagnostic",
+    [
+        (b'{"issuer":"DO-NOT-ECHO","issuer":"other"}', "configuration_duplicate_member"),
+        (b'{"kms":{"role":"DO-NOT-ECHO","role":"other"}}', "configuration_duplicate_member"),
+        (b'{"grant_expires_at":NaN,"marker":"DO-NOT-ECHO"}', "configuration_nonfinite_number"),
+        (b'{"grant_expires_at":Infinity,"marker":"DO-NOT-ECHO"}', "configuration_nonfinite_number"),
+        (b'{"grant_expires_at":1e9999,"marker":"DO-NOT-ECHO"}', "configuration_nonfinite_number"),
+        (b" " * (1024 * 1024 + 1), "configuration_too_large"),
+    ],
+)
+def test_config_load_uses_strict_bounded_parser_without_echoing_input(tmp_path, monkeypatch, raw, diagnostic):
+    monkeypatch.setattr(production, "_trusted_file", lambda *args, **kwargs: contextlib.nullcontext(17))
+    monkeypatch.setattr(
+        production,
+        "os",
+        SimpleNamespace(fstat=lambda fd: SimpleNamespace(st_uid=0), read=lambda fd, limit: raw[:limit]),
+    )
+    with pytest.raises(ValueError, match=diagnostic) as failure:
+        production.load_config(tmp_path / "policy.json")
+    assert "DO-NOT-ECHO" not in str(failure.value)
+
+
+@pytest.mark.asyncio
+async def test_service_hardens_process_before_reading_configuration(tmp_path, monkeypatch):
+    events = []
+    monkeypatch.setattr(production, "require_isolated_linux", lambda: events.append("isolation"))
+    monkeypatch.setattr(production, "harden_secret_process", lambda: events.append("dump-protection"))
+
+    def stop_after_configuration(path):
+        events.append("configuration")
+        raise ValueError("stop_before_credentials")
+
+    monkeypatch.setattr(production, "load_config", stop_after_configuration)
+    with pytest.raises(ValueError, match="stop_before_credentials"):
+        await production.serve(tmp_path / "policy.json")
+    assert events == ["isolation", "dump-protection", "configuration"]
 
 
 def test_admin_listener_cannot_be_created_from_untrusted_environment(monkeypatch):

@@ -42,6 +42,7 @@ from .envelope import (
 from .kms import provision_kms
 from .process import harden_process
 from .transport import OpenBaoOperator, import_credential, memfd_mtls, ssh_command, ssh_send
+from .workloads import WorkloadSetupError, check_workload_files, create_workload
 
 
 def load_custody(metadata_path: Path, passphrase_fd: int | None = None):
@@ -148,6 +149,18 @@ def _receiver_recovery(value: dict) -> dict:
 
 
 def execute(args) -> dict | None:
+    if args.command == "workload-init":
+        return create_workload(
+            adapter=args.adapter, issuer=args.issuer, audience=args.audience, origin=args.origin,
+            tenant=args.tenant, output_directory=args.output_directory, workload_id=args.workload_id,
+            grant_days=args.grant_days, resource_path=args.resource_path, resource_action=args.resource_action,
+            enabled=args.enable, trust_origin=args.trust_origin,
+        )
+    if args.command == "workload-check":
+        return check_workload_files(
+            args.config, args.registration, authority_path=args.authority_config,
+            require_ready=args.require_ready,
+        )
     if args.command == "custody-create":
         directory = args.directory
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -416,9 +429,27 @@ def execute(args) -> dict | None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
-        prog="pap-operator", description="Env-free operator custody, backup and recovery"
+        prog="pap-operator", description="Public workload setup and env-free operator custody, backup and recovery"
     )
     commands = root.add_subparsers(dest="command", required=True)
+    workload = commands.add_parser("workload-init", help="Create a public workload configuration and registration")
+    workload.add_argument("--adapter", choices=("netlify", "https-origin"), required=True)
+    workload.add_argument("--issuer", required=True, help="Existing authority HTTPS origin")
+    workload.add_argument("--audience", required=True, help="Existing authority audience")
+    workload.add_argument("--origin", required=True, help="Dedicated workload HTTPS origin")
+    workload.add_argument("--tenant", required=True)
+    workload.add_argument("--output-directory", type=Path, required=True, help="New directory; never overwritten")
+    workload.add_argument("--workload-id", help="Actual Netlify site UUID; generated for HTTPS origins if omitted")
+    workload.add_argument("--grant-days", type=int, default=7, help="Absolute grant expiry in 1-30 days; default 7")
+    workload.add_argument("--resource-path", default="/api/pap/records")
+    workload.add_argument("--resource-action", default="records.read")
+    workload.add_argument("--trust-origin", action="store_true", help="Acknowledge all origin administrators as trusted")
+    workload.add_argument("--enable", action="store_true", help="Enable public config; requires --trust-origin")
+    check = commands.add_parser("workload-check", help="Check public workload bindings offline without changing files")
+    check.add_argument("--config", type=Path, required=True)
+    check.add_argument("--registration", type=Path, required=True)
+    check.add_argument("--authority-config", type=Path, help="Local authority configuration to check its public bindings")
+    check.add_argument("--require-ready", action="store_true", help="Fail unless enabled, trusted and exactly registered")
     create = commands.add_parser("custody-create", help="Create a new operator custody identity")
     create.add_argument("--backend", choices=("keychain", "encrypted-pem"), required=True)
     create.add_argument("--directory", type=Path, required=True)
@@ -516,10 +547,20 @@ def parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     try:
         harden_process()
-        result = execute(parser().parse_args(argv))
+        args = parser().parse_args(argv)
+        result = execute(args)
         if result is not None:
             print(json.dumps(result, sort_keys=True, ensure_ascii=True, allow_nan=False))
+        if args.command == "workload-check" and result is not None and result.get("ok") is False:
+            return 2
         return 0
+    except WorkloadSetupError as exc:
+        print(json.dumps({
+            "ok": False, "ready": False, "scope": "public_workload_bindings",
+            "deployment_accepted": False,
+            "findings": [{"code": exc.code, "field": exc.field, "severity": "error"}],
+        }), file=sys.stderr)
+        return 2
     except CustodyError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
         return 2

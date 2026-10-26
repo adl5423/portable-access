@@ -6,6 +6,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -86,6 +87,21 @@ def test_kms_has_verified_tls_and_loopback_listeners_without_development_mode():
     assert "-dev" not in unit("pap-openbao.service")
 
 
+@pytest.mark.parametrize("profile", ["openbao.hcl", "openbao.enrollment.hcl"])
+def test_supported_openbao_profiles_do_not_use_removed_mlock_configuration(profile):
+    assert "disable_mlock" not in (ASSETS / "openbao" / profile).read_text()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["pap-authority.service", "pap-openbao.service", "pap-enroller.service", "pap-caddy.service", "pap-boot.service"],
+)
+def test_secret_bearing_units_disable_core_files_and_swap(name):
+    content = unit(name)
+    assert "LimitCORE=0\n" in content
+    assert "MemorySwapMax=0\n" in content
+
+
 def test_gateway_has_separate_uid_and_private_administration():
     content = unit("pap-caddy.service")
     assert "User=pap-proxy\n" in content
@@ -126,6 +142,24 @@ def test_installer_never_follows_input_symlinks_or_replaces_credentials(tmp_path
     with pytest.raises(FileExistsError):
         installer.write_new(target, b"replacement", os.getuid(), os.getgid(), 0o600)
     assert target.read_bytes() == b"fixture"
+
+
+@pytest.mark.parametrize(
+    "raw,code",
+    [
+        (b'{"issuer":"https://first.example.com","issuer":"https://second.example.com"}', "configuration_duplicate_member"),
+        (b'{"kms":{"role":"reviewed","role":"replacement"}}', "configuration_duplicate_member"),
+        (b'{"token_ttl":NaN}', "configuration_nonfinite_number"),
+        (b'{"audience":"\xff"}', "configuration_json_invalid"),
+        (b'{"padding":"' + b"x" * (1024 * 1024) + b'"}', "configuration_too_large"),
+    ],
+)
+def test_installer_rejects_ambiguous_or_invalid_json_before_profile_normalization(tmp_path, raw, code):
+    installer = load_asset("install")
+    path = tmp_path / "policy.json"
+    path.write_bytes(raw)
+    with pytest.raises(ValueError, match=code):
+        installer.configured(SimpleNamespace(config=path, hostname="authority.example.com"))
 
 
 def test_installer_creates_credentials_with_exact_mode(tmp_path):

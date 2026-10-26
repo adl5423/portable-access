@@ -48,6 +48,7 @@ LimitNOFILE=8192
 TasksMax=256
 MemoryMax=2G
 MemorySwapMax=0
+LimitCORE=0
 LimitMEMLOCK=infinity
 StandardOutput=journal
 StandardError=journal

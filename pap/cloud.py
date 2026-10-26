@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 import secrets
 import socket
@@ -129,7 +130,11 @@ class Site:
                 raise ValueError("invalid site binding identifier")
         if self.environment != "production" or self.trusted_site_contexts is not True:
             raise ValueError("dedicated trusted production site must be explicitly acknowledged")
-        if type(self.grant_expires_at) not in (int, float) or not 0 < self.grant_expires_at < 4102444800:
+        if (
+            type(self.grant_expires_at) not in (int, float)
+            or not 0 < self.grant_expires_at < 4102444800
+            or not math.isfinite(self.grant_expires_at)
+        ):
             raise ValueError("explicit absolute grant expiry required")
         if (
             not re.fullmatch(r"/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+", self.resource_path)
@@ -145,14 +150,19 @@ class Site:
         return -1 - int.from_bytes(hashlib.sha256(self.subject.encode()).digest()[:7])
 
 
+def validate_sites(sites: list[Site]) -> None:
+    """Validate a registration set without opening state or contacting key custody."""
+    if any(
+        len({getattr(site, field) for site in sites}) != len(sites)
+        for field in ("site_id", "origin", "subject", "grant_id")
+    ):
+        raise ValueError("site bindings must be unique")
+
+
 class SiteRegistry:
     def __init__(self, authority, sites: list[Site]):
         self.authority, self.store = authority, authority.store
-        if any(
-            len({getattr(s, k) for s in sites}) != len(sites)
-            for k in ("site_id", "origin", "subject", "grant_id")
-        ):
-            raise ValueError("site bindings must be unique")
+        validate_sites(sites)
         self.sites = {s.grant_id: s for s in sites}
         # Initial challenges are deliberately stateless: an unauthenticated
         # caller must not reserve another site's issuance slots or quota.
@@ -160,8 +170,9 @@ class SiteRegistry:
         self._selectors = {self._selector(s.grant_id): s for s in sites}
         if len(self._selectors) != len(sites):
             raise ValueError("site challenge selectors must be unique")
-        self.store.db.execute("""CREATE TABLE IF NOT EXISTS site_challenges (
-            id TEXT PRIMARY KEY, grant_id TEXT NOT NULL, record TEXT NOT NULL, expires REAL NOT NULL, consumed INTEGER NOT NULL DEFAULT 0)""")
+        # Check the entire set before provisioning or upgrading a legacy binding.
+        # A later invalid registration must not partially change earlier policy.
+        registrations = []
         for site in sites:
             binding = {k: v for k, v in vars(site).items() if k != "grant_expires_at"}
             previous = self.store.setting("site:" + site.grant_id)
@@ -171,7 +182,35 @@ class SiteRegistry:
                 previous = {**previous, "identity_adapter": "netlify"}
             if previous is not None and previous != binding:
                 raise ValueError("existing site binding cannot be silently rebound")
-            existed = self.store.db.execute("SELECT 1 FROM workloads WHERE id=?", (site.subject,)).fetchone()
+            persisted_grant = self.store.db.execute(
+                "SELECT workload,expires FROM grants WHERE id=?", (site.grant_id,)
+            ).fetchone()
+            if persisted_grant is not None and persisted_grant["workload"] != site.subject:
+                raise ValueError("existing grant binding cannot be silently rebound")
+            if persisted_grant is not None and persisted_grant["expires"] != site.grant_expires_at:
+                raise ValueError("existing grant expiry cannot be changed through configuration")
+            existing = self.store.db.execute(
+                "SELECT * FROM workloads WHERE id=? OR uid=?", (site.subject, site.uid)
+            ).fetchall()
+            if existing and (
+                len(existing) != 1
+                or any(
+                    existing[0][field] != value
+                    for field, value in {
+                        "id": site.subject,
+                        "uid": site.uid,
+                        "tenant": site.tenant,
+                        "environment": site.environment,
+                    }.items()
+                )
+            ):
+                raise ValueError("existing workload binding cannot be silently rebound")
+            if existing and persisted_grant is None:
+                raise ValueError("existing workload is missing its registered grant")
+            registrations.append((site, binding, bool(existing)))
+        self.store.db.execute("""CREATE TABLE IF NOT EXISTS site_challenges (
+            id TEXT PRIMARY KEY, grant_id TEXT NOT NULL, record TEXT NOT NULL, expires REAL NOT NULL, consumed INTEGER NOT NULL DEFAULT 0)""")
+        for site, binding, existed in registrations:
             self.authority.provision(
                 site.uid,
                 subject=site.subject,

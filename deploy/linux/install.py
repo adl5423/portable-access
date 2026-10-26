@@ -17,6 +17,13 @@ import sys
 from pathlib import Path
 
 ASSETS = Path(__file__).resolve().parent
+# The documented standalone installer uses the host's standard-library Python.
+# Load the reviewed source reader without requiring PAP in that interpreter.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(ASSETS.parents[1]))
+
+from pap.configuration import parse_config_json  # noqa: E402
+
 ROLES = ("pap-issuer", "pap-kms", "pap-admin", "pap-app", "pap-proxy")
 BOOTSTRAP_STATE_DIRECTORIES = frozenset(
     Path("/var/lib") / name for name in ("pap-issuer", "pap-kms", "pap-proxy")
@@ -246,7 +253,7 @@ def require_stopped_accounts(identities):
 
 
 def configured(arguments):
-    config = json.loads(read_file(arguments.config))
+    config = parse_config_json(read_file(arguments.config), maximum_bytes=1024 * 1024)
     if not isinstance(config, dict):
         raise ValueError("authority configuration must be an object")
     if not re.fullmatch(

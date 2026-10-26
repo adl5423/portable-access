@@ -17,7 +17,7 @@ import pytest
 
 from pap import cloud
 from pap.authority import Authority, Config
-from pap.cloud import PublicResolver, Site, SiteRegistry, fetch_site_record, netlify_origin
+from pap.cloud import PublicResolver, Site, SiteRegistry, fetch_site_record, netlify_origin, validate_sites
 from pap.crypto import Denied, fresh_key, proof, public_jwk, thumbprint
 from pap.identity_adapters import IDENTITY_ADAPTERS, https_origin, identity_adapter, public_destination
 from pap.storage import Store
@@ -131,6 +131,9 @@ def test_registration_requires_explicit_production_trust_and_canonical_site_id(r
         {"subject": "../../another-tenant"},
         {"grant_expires_at": True},
         {"grant_expires_at": float("nan")},
+        {"grant_expires_at": float("inf")},
+        {"grant_expires_at": float("-inf")},
+        {"grant_expires_at": 10**1000},
     ]:
         with pytest.raises(ValueError):
             replace(site, **changes)
@@ -168,8 +171,11 @@ def test_duplicate_authority_bindings_are_rejected(registered, field):
     )
     # Distinct tenants can share a tenant, but immutable workload/origin/grant identifiers cannot collide.
     if field == "tenant":
+        validate_sites([site, replace(second, tenant=site.tenant)])
         SiteRegistry(authority, [site, replace(second, tenant=site.tenant)])
         return
+    with pytest.raises(ValueError, match="unique"):
+        validate_sites([site, replace(second, **{field: getattr(site, field)})])
     with pytest.raises(ValueError, match="unique"):
         SiteRegistry(authority, [site, replace(second, **{field: getattr(site, field)})])
 
@@ -196,13 +202,39 @@ def test_unchanged_registration_is_idempotent_and_never_extends_an_existing_gran
         "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
     ).fetchone()[0]
     SiteRegistry(authority, [site])
-    SiteRegistry(authority, [replace(site, grant_expires_at=site.grant_expires_at + 3600)])
+    with pytest.raises(ValueError, match="expiry cannot be changed"):
+        SiteRegistry(authority, [replace(site, grant_expires_at=site.grant_expires_at + 3600)])
     assert (
         authority.store.db.execute("SELECT expires FROM grants WHERE id=?", (site.grant_id,)).fetchone()[0]
         == initial_expiry
     )
     assert authority.store.db.execute("SELECT COUNT(*) FROM workloads").fetchone()[0] == 1
     assert authority.store.db.execute("SELECT COUNT(*) FROM grants").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("expiry_change", [-1, 3600])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_expiry_drift_rejects_the_whole_registration_set_without_mutation(registered, expiry_change, legacy):
+    authority, _, site = registered
+    if legacy:
+        previous = authority.store.setting("site:" + site.grant_id)
+        previous.pop("identity_adapter")
+        authority.store.set_setting("site:" + site.grant_id, previous)
+    new_site = replace(
+        site,
+        site_id="22222222-2222-4222-8222-222222222222",
+        origin="https://new-project.netlify.app",
+        subject="new-project",
+        grant_id="new-grant",
+    )
+    before = list(authority.store.db.iterdump())
+    writes = authority.store.db.total_changes
+    with pytest.raises(ValueError, match="expiry cannot be changed"):
+        SiteRegistry(authority, [new_site, replace(site, grant_expires_at=site.grant_expires_at + expiry_change)])
+    assert authority.store.db.total_changes == writes
+    assert list(authority.store.db.iterdump()) == before
+    assert authority.store.setting("site:" + new_site.grant_id) is None
+    assert ("identity_adapter" in authority.store.setting("site:" + site.grant_id)) is not legacy
 
 
 def test_challenge_and_credential_are_bound_to_exact_site_key_and_issuer(registered):
@@ -476,7 +508,24 @@ def test_current_policy_blocks_existing_access_pending_exchange_and_new_enrollme
         registry.finish_exchange(challenge["challenge_id"], pending_jwk, encoded, challenge)
     with pytest.raises(Denied):
         registry.challenge(site.grant_id, public_jwk(fresh_key()))
-    restored = SiteRegistry(authority, [replace(site, grant_expires_at=time.time() + 3600)])
+    with pytest.raises(ValueError, match="expiry cannot be changed"):
+        SiteRegistry(authority, [replace(site, grant_expires_at=time.time() + 3600)])
+    if mutation == "expired-grant":
+        with pytest.raises(ValueError, match="expiry cannot be changed"):
+            SiteRegistry(authority, [site])
+    else:
+        restored = SiteRegistry(authority, [site])
+        with pytest.raises(Denied):
+            restored.challenge(site.grant_id, public_jwk(fresh_key()))
+
+
+def test_unchanged_naturally_expired_grant_is_not_restored_on_restart(registered, monkeypatch):
+    authority, _, site = registered
+    monkeypatch.setattr(cloud.time, "time", lambda: site.grant_expires_at + 1)
+    restored = SiteRegistry(authority, [site])
+    assert authority.store.db.execute(
+        "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
+    ).fetchone()[0] == site.grant_expires_at
     with pytest.raises(Denied):
         restored.challenge(site.grant_id, public_jwk(fresh_key()))
 
@@ -800,7 +849,7 @@ def test_legacy_netlify_binding_migrates_without_reprovisioning_or_extending_pol
     initial_expiry = authority.store.db.execute(
         "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
     ).fetchone()[0]
-    SiteRegistry(authority, [replace(site, grant_expires_at=site.grant_expires_at + 3600)])
+    SiteRegistry(authority, [site])
     assert authority.store.setting("site:" + site.grant_id)["identity_adapter"] == "netlify"
     assert authority.store.db.execute(
         "SELECT expires FROM grants WHERE id=?", (site.grant_id,)
